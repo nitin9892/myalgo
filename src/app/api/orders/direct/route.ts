@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getBrokerAdapter } from '@/lib/brokers';
 import { BrokerType, OrderRequest } from '@/lib/brokers/types';
 import { getAdminSupabase } from '@/lib/supabase';
+import { getRiskConfiguration } from '@/lib/risk/engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,15 @@ export async function POST(request: Request) {
 
     if (!broker || !symbol || !side || !quantity) {
       return NextResponse.json({ success: false, message: 'Missing order parameters' }, { status: 400 });
+    }
+
+    // KILL SWITCH PROTECTION CHECK
+    const riskConfig = await getRiskConfiguration();
+    if (riskConfig.killSwitchActive) {
+      return NextResponse.json({
+        success: false,
+        message: `🚨 ORDER REJECTED: Kill Switch is ACTIVE (${riskConfig.killSwitchReason || 'Emergency circuit breaker tripped'}). Reset Kill Switch in Risk & Capital before trading.`
+      }, { status: 403 });
     }
 
     const adapter = getBrokerAdapter(broker as BrokerType, credentials);

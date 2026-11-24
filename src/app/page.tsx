@@ -17,7 +17,8 @@ import {
   ShieldAlert,
   Wallet,
   Clock,
-  XOctagon
+  XOctagon,
+  ArrowRight
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -33,8 +34,8 @@ export default function DashboardPage() {
     winRate: 0,
     totalClosedToday: 0,
     openCount: 0,
-    activeStrategies: 2,
-    totalStrategies: 3,
+    activeStrategies: 1,
+    totalStrategies: 1,
   });
 
   const [activePositions, setActivePositions] = useState<any[]>([]);
@@ -45,7 +46,19 @@ export default function DashboardPage() {
 
   const fetchDashboardData = async () => {
     try {
-      // 1. Fetch live trades & stats
+      // 1. Check local storage for kill switch
+      const localKill = localStorage.getItem('myalgo_kill_switch');
+      if (localKill) {
+        try {
+          const parsed = JSON.parse(localKill);
+          if (parsed.active) {
+            setKillSwitchActive(true);
+            setKillSwitchReason(parsed.reason || 'Emergency Kill Switch engaged');
+          }
+        } catch {}
+      }
+
+      // 2. Fetch live trades & stats
       const tradesRes = await fetch('/api/trades');
       const tradesData = await tradesRes.json();
       if (tradesData.success) {
@@ -62,15 +75,21 @@ export default function DashboardPage() {
         }
       }
 
-      // 2. Fetch risk & kill switch status
+      // 3. Fetch risk & kill switch status from API
       const riskRes = await fetch('/api/risk');
       const riskData = await riskRes.json();
       if (riskData) {
-        setKillSwitchActive(riskData.isKillSwitchActive || false);
-        setKillSwitchReason(riskData.killSwitchReason || null);
+        const isServerActive = !!(riskData.isKillSwitchActive || riskData.config?.killSwitchActive);
+        if (isServerActive) {
+          setKillSwitchActive(true);
+          setKillSwitchReason(riskData.killSwitchReason || 'Emergency Kill Switch engaged');
+        } else if (!localKill) {
+          setKillSwitchActive(false);
+          setKillSwitchReason(null);
+        }
       }
 
-      // 3. Read connected brokers from localStorage
+      // 4. Read connected brokers from localStorage
       const savedBrokerStatus = localStorage.getItem('myalgo_broker_status');
       if (savedBrokerStatus) {
         setConnectedBrokers(JSON.parse(savedBrokerStatus));
@@ -139,98 +158,82 @@ export default function DashboardPage() {
     }
   };
 
-  const isDeltaConnected = connectedBrokers.DELTA?.success;
-  const isDhanConnected = connectedBrokers.DHAN?.success;
-  const isMT5Connected = connectedBrokers.METATRADER?.success;
+  // Find active single broker
+  const connectedEntry = Object.entries(connectedBrokers).find(([_, stat]) => stat?.success);
+  const activeBrokerId = connectedEntry ? connectedEntry[0] : null;
+  const activeBrokerData = connectedEntry ? connectedEntry[1] : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Top Banner / Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 sm:pb-6 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            Algo Trading Control Center
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              Algo Control Center
+            </h1>
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               Live Ready
             </span>
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Automated multi-broker execution with 5m candle breakout, step trailing, and capital protection.
+          </div>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            5m candle breakout engine with 1:3 RR targets, step trailing, and capital protection.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           <button
             onClick={triggerCycleNow}
             disabled={isRunningCycle}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 active:scale-95"
           >
             <Play className={`w-4 h-4 fill-slate-950 ${isRunningCycle ? 'animate-spin' : ''}`} />
-            {isRunningCycle ? 'Evaluating 5m Feeds...' : 'Run Trade Cycle Now'}
+            {isRunningCycle ? 'Evaluating 5m Feeds...' : 'Run Trade Cycle'}
           </button>
-          <div className="text-xs text-slate-500 flex items-center gap-1">
+          <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1">
             <RefreshCw className="w-3 h-3" /> Sync {lastUpdated || 'Live'}
           </div>
         </div>
       </div>
 
-      {/* Connected Brokers Live Ribbon */}
-      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shadow-md">
+      {/* Connected Broker Live Ribbon */}
+      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shadow-md">
         <div className="flex items-center gap-2">
-          <Wallet className="w-4 h-4 text-emerald-400" />
-          <span className="font-semibold text-slate-300">Broker Execution Status:</span>
+          <Wallet className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="font-semibold text-slate-300">Active Broker:</span>
+          {activeBrokerId ? (
+            <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              {activeBrokerId} ({activeBrokerData?.balanceDisplay || 'Connected'})
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700 font-medium">
+              No Broker Connected
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Delta Exchange Pill */}
-          <span className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 ${
-            isDeltaConnected 
-              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-              : 'bg-slate-800 text-slate-400 border-slate-700/60'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isDeltaConnected ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
-            Delta: {isDeltaConnected ? (connectedBrokers.DELTA?.balanceDisplay || 'Connected') : 'Not Connected'}
-          </span>
-
-          {/* DhanHQ Pill */}
-          <span className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 ${
-            isDhanConnected 
-              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-              : 'bg-slate-800 text-slate-400 border-slate-700/60'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isDhanConnected ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
-            Dhan: {isDhanConnected ? 'Ready (NSE)' : 'Standby'}
-          </span>
-
-          {/* MetaTrader 5 Pill */}
-          <span className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 ${
-            isMT5Connected 
-              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
-              : 'bg-slate-800 text-slate-400 border-slate-700/60'
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isMT5Connected ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
-            MT5: {isMT5Connected ? 'IPC Bridge Online' : 'Bridge Ready'}
-          </span>
-
-          <Link href="/brokers" className="text-cyan-400 hover:underline font-semibold ml-1">
-            Configure &rarr;
-          </Link>
-        </div>
+        <Link 
+          href="/brokers" 
+          className="text-cyan-400 hover:underline font-semibold flex items-center gap-1 text-xs self-start sm:self-auto"
+        >
+          {activeBrokerId ? 'Manage / Switch Broker' : 'Connect Broker'} &rarr;
+        </Link>
       </div>
 
       {/* Kill Switch Triggered Alert Banner */}
       {killSwitchActive && (
-        <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 flex items-center justify-between gap-3 shadow-lg shadow-rose-950/40">
-          <div className="flex items-center gap-3">
-            <XOctagon className="w-6 h-6 text-rose-400 shrink-0 animate-pulse" />
+        <div className="p-4 rounded-xl bg-gradient-to-r from-rose-950/90 via-slate-950 to-rose-950/90 border border-rose-500/60 text-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-rose-950/50">
+          <div className="flex items-start sm:items-center gap-3">
+            <XOctagon className="w-6 h-6 text-rose-400 shrink-0 animate-bounce mt-0.5 sm:mt-0" />
             <div>
-              <p className="font-bold text-sm text-white">EMERGENCY KILL SWITCH ACTIVATED</p>
+              <p className="font-black text-sm text-white tracking-wide">🚨 EMERGENCY KILL SWITCH ENGAGED</p>
               <p className="text-xs text-rose-300 mt-0.5">{killSwitchReason || 'Max Daily Loss limit breached. All automated trading halted.'}</p>
             </div>
           </div>
-          <Link href="/risk" className="px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors shadow">
-            Reset Kill Switch
+          <Link href="/risk" className="w-full sm:w-auto text-center px-4 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors shadow shrink-0">
+            Disarm Kill Switch
           </Link>
         </div>
       )}
@@ -241,7 +244,7 @@ export default function DashboardPage() {
           <p className="font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4" /> Cycle Completed at {cycleResult.timestamp || 'Now'}
           </p>
-          <div className="font-mono bg-slate-950 p-2.5 rounded border border-slate-800 text-slate-300 space-y-1">
+          <div className="font-mono bg-slate-950 p-2.5 rounded border border-slate-800 text-slate-300 space-y-1 overflow-x-auto text-[11px]">
             {cycleResult.result?.logs?.map((l: string, i: number) => (
               <div key={i}>{l}</div>
             )) || <div>{JSON.stringify(cycleResult)}</div>}
@@ -249,212 +252,313 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      {/* Metric Cards - 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {/* Card 1: Today Realized P&L */}
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
             <span>Today's Realized P&L</span>
             {stats.todayPnl >= 0 ? (
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
-              <TrendingDown className="w-4 h-4 text-rose-400" />
+              <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
             )}
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold font-mono ${stats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`text-lg sm:text-2xl font-bold font-mono ${stats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {stats.todayPnl >= 0 ? '+' : ''}₹{stats.todayPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-            Across <span className="text-white font-semibold">{stats.totalClosedToday}</span> closed trades today
+          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5">
+            {stats.totalClosedToday} closed trades
           </p>
         </div>
 
         {/* Card 2: Master Strategy */}
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
             <span>Master Strategy</span>
-            <Zap className="w-4 h-4 text-emerald-400" />
+            <Zap className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-base font-bold text-white font-mono flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              5m Prev Day Breakout
+            <span className="text-xs sm:text-base font-bold text-white font-mono flex items-center gap-1.5 truncate">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              5m Breakout
             </span>
           </div>
-          <Link href="/strategies" className="text-xs text-emerald-400 hover:underline mt-2 inline-block font-semibold">
-            Tune 1:3 RR & Trailing &rarr;
+          <Link href="/strategies" className="text-[10px] sm:text-xs text-emerald-400 hover:underline mt-1.5 inline-block font-semibold">
+            Settings &rarr;
           </Link>
         </div>
 
         {/* Card 3: Win Rate */}
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
             <span>Win Rate</span>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white font-mono">{stats.winRate}%</span>
+            <span className="text-lg sm:text-2xl font-bold text-white font-mono">{stats.winRate}%</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2">
-            Performance ratio today
+          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5">
+            Daily ratio
           </p>
         </div>
 
         {/* Card 4: Capital Protection */}
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
+          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
             <span>Capital Protection</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-lg font-bold ${killSwitchActive ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {killSwitchActive ? 'HALTED' : 'ARMED & ACTIVE'}
+            <span className={`text-xs sm:text-lg font-bold ${killSwitchActive ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {killSwitchActive ? 'HALTED' : 'ARMED'}
             </span>
           </div>
-          <Link href="/risk" className="text-xs text-emerald-400 hover:underline mt-2 inline-block font-semibold">
-            Risk & SL settings &rarr;
+          <Link href="/risk" className="text-[10px] sm:text-xs text-emerald-400 hover:underline mt-1.5 inline-block font-semibold">
+            Risk & SL &rarr;
           </Link>
         </div>
       </div>
 
       {/* Active Live Positions */}
-      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+      <div className="p-4 sm:p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-4">
+          <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
             Open Positions ({activePositions.length})
           </h2>
           <span className="text-xs text-slate-400">1:3 RR targets & 10pt step trailing active</span>
         </div>
 
-        <div className="overflow-x-auto">
-          {activePositions.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-xs font-sans">
-              <Zap className="w-8 h-8 mx-auto mb-2 opacity-30 text-emerald-400" />
-              <p className="text-sm font-semibold text-slate-400">No active positions open right now.</p>
-              <p className="mt-1">Waiting for fresh 5m candle breakout signals (09:15 - 15:30).</p>
-            </div>
-          ) : (
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
-                <tr>
-                  <th className="py-3 px-4">Symbol</th>
-                  <th className="py-3 px-4">Broker</th>
-                  <th className="py-3 px-4">Side</th>
-                  <th className="py-3 px-4">Quantity</th>
-                  <th className="py-3 px-4">Entry Price</th>
-                  <th className="py-3 px-4">Current Price</th>
-                  <th className="py-3 px-4 text-right">Unrealized P&L</th>
-                  <th className="py-3 px-4 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800 font-mono">
-                {activePositions.map((pos) => {
-                  const entry = Number(pos.entry_price || pos.entryPrice || 0);
-                  const curr = Number(pos.current_price || pos.currentPrice || entry);
-                  const pnl = Number(pos.pnl || (pos.side === 'BUY' ? (curr - entry) * pos.quantity : (entry - curr) * pos.quantity));
-                  const isProfitable = pnl >= 0;
+        {activePositions.length === 0 ? (
+          <div className="py-10 text-center text-slate-500 text-xs font-sans">
+            <Zap className="w-8 h-8 mx-auto mb-2 opacity-30 text-emerald-400" />
+            <p className="text-sm font-semibold text-slate-400">No active positions open right now.</p>
+            <p className="mt-1">Waiting for fresh 5m candle breakout signals (09:15 - 15:30).</p>
+          </div>
+        ) : (
+          <>
+            {/* Mobile View: Clean Touch-Friendly Cards */}
+            <div className="grid grid-cols-1 gap-3 md:hidden">
+              {activePositions.map((pos) => {
+                const entry = Number(pos.entry_price || pos.entryPrice || 0);
+                const curr = Number(pos.current_price || pos.currentPrice || entry);
+                const pnl = Number(pos.pnl || (pos.side === 'BUY' ? (curr - entry) * pos.quantity : (entry - curr) * pos.quantity));
+                const isProfitable = pnl >= 0;
 
-                  return (
-                    <tr key={pos.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3.5 px-4 font-sans font-semibold text-white flex items-center gap-2">
-                        {pos.symbol}
-                        {pos.paper_trade && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans font-bold">
+                return (
+                  <div key={pos.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 shadow-md">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-white text-base font-mono">{pos.symbol}</span>
+                        {pos.paper_trade ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold">
                             PAPER
                           </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+                            LIVE
+                          </span>
                         )}
-                      </td>
-                      <td className="py-3.5 px-4 text-xs font-sans">
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                           {pos.broker_name || pos.broker}
                         </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                          pos.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'
-                        }`}>
-                          {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                          {pos.side}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">{pos.quantity}</td>
-                      <td className="py-3.5 px-4">{entry}</td>
-                      <td className="py-3.5 px-4">{curr}</td>
-                      <td className={`py-3.5 px-4 text-right font-bold ${
-                        isProfitable ? 'text-emerald-400' : 'text-rose-400'
+                      </div>
+                      <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg ${
+                        pos.side === 'BUY' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
                       }`}>
-                        {isProfitable ? '+' : ''}{pnl.toFixed(2)}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => handleSquareOff(pos)}
-                          disabled={squaringOffId === pos.id}
-                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-all disabled:opacity-50"
-                        >
-                          {squaringOffId === pos.id ? 'Exiting...' : 'Square Off'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+                        {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                        {pos.side}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-900">
+                      <div>
+                        <span className="text-slate-500 text-[10px] block">Qty</span>
+                        <span className="font-mono text-slate-200 font-bold">{pos.quantity}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 text-[10px] block">Entry Price</span>
+                        <span className="font-mono text-slate-200">{entry}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 text-[10px] block">Current</span>
+                        <span className="font-mono text-slate-200">{curr}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-800/80">
+                      <div>
+                        <span className="text-slate-500 text-[10px] block">Unrealized P&L</span>
+                        <span className={`font-mono font-black text-lg ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {isProfitable ? '+' : ''}{pnl.toFixed(2)}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => handleSquareOff(pos)}
+                        disabled={squaringOffId === pos.id}
+                        className="px-4 py-2 text-xs font-bold rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 transition-all disabled:opacity-50"
+                      >
+                        {squaringOffId === pos.id ? 'Exiting...' : 'Square Off'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Symbol</th>
+                    <th className="py-3 px-4">Broker</th>
+                    <th className="py-3 px-4">Side</th>
+                    <th className="py-3 px-4">Quantity</th>
+                    <th className="py-3 px-4">Entry Price</th>
+                    <th className="py-3 px-4">Current Price</th>
+                    <th className="py-3 px-4 text-right">Unrealized P&L</th>
+                    <th className="py-3 px-4 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-mono">
+                  {activePositions.map((pos) => {
+                    const entry = Number(pos.entry_price || pos.entryPrice || 0);
+                    const curr = Number(pos.current_price || pos.currentPrice || entry);
+                    const pnl = Number(pos.pnl || (pos.side === 'BUY' ? (curr - entry) * pos.quantity : (entry - curr) * pos.quantity));
+                    const isProfitable = pnl >= 0;
+
+                    return (
+                      <tr key={pos.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3.5 px-4 font-sans font-semibold text-white flex items-center gap-2">
+                          {pos.symbol}
+                          {pos.paper_trade && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans font-bold">
+                              PAPER
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs font-sans">
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            {pos.broker_name || pos.broker}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                            pos.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                            {pos.side}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">{pos.quantity}</td>
+                        <td className="py-3.5 px-4">{entry}</td>
+                        <td className="py-3.5 px-4">{curr}</td>
+                        <td className={`py-3.5 px-4 text-right font-bold ${
+                          isProfitable ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {isProfitable ? '+' : ''}{pnl.toFixed(2)}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => handleSquareOff(pos)}
+                            disabled={squaringOffId === pos.id}
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-all disabled:opacity-50"
+                          >
+                            {squaringOffId === pos.id ? 'Exiting...' : 'Square Off'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Recent Completed Trades */}
-      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
-        <h2 className="text-lg font-semibold text-white mb-4">Recent Executed Trades</h2>
-        <div className="overflow-x-auto">
-          {recentTrades.length === 0 ? (
-            <div className="py-8 text-center text-slate-500 text-xs font-sans">
-              No recent closed trades yet. Closed trades will show here automatically.
-            </div>
-          ) : (
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
-                <tr>
-                  <th className="py-3 px-4">Symbol</th>
-                  <th className="py-3 px-4">Broker</th>
-                  <th className="py-3 px-4">Action</th>
-                  <th className="py-3 px-4">Qty</th>
-                  <th className="py-3 px-4">Entry / Exit</th>
-                  <th className="py-3 px-4">Strategy Reason</th>
-                  <th className="py-3 px-4 text-right">Realized P&L</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800 font-mono">
-                {recentTrades.map((tr) => (
-                  <tr key={tr.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4 font-sans font-medium text-white">{tr.symbol}</td>
-                    <td className="py-3 px-4 text-xs font-sans">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                        {tr.broker_name || tr.broker}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`text-xs font-semibold ${tr.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
+      <div className="p-4 sm:p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
+        <h2 className="text-base sm:text-lg font-semibold text-white mb-4">Recent Executed Trades</h2>
+
+        {recentTrades.length === 0 ? (
+          <div className="py-8 text-center text-slate-500 text-xs font-sans">
+            No recent closed trades yet. Closed trades will show here automatically.
+          </div>
+        ) : (
+          <>
+            {/* Mobile Trade Cards */}
+            <div className="grid grid-cols-1 gap-2.5 md:hidden">
+              {recentTrades.map((tr) => (
+                <div key={tr.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white font-mono">{tr.symbol}</span>
+                    <span className={`font-bold font-mono text-sm ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {Number(tr.pnl || 0) >= 0 ? `+${tr.pnl}` : tr.pnl}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                    <span className="flex items-center gap-1.5">
+                      <span className={`px-1.5 py-0.5 rounded font-bold ${tr.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
                         {tr.side}
                       </span>
-                    </td>
-                    <td className="py-3 px-4">{tr.quantity}</td>
-                    <td className="py-3 px-4 text-xs">
-                      {tr.entry_price || tr.entry} &rarr; {tr.exit_price || tr.exit || '-'}
-                    </td>
-                    <td className="py-3 px-4 text-xs font-sans text-slate-400">{tr.notes || 'Target Hit'}</td>
-                    <td className={`py-3 px-4 text-right font-bold ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {Number(tr.pnl || 0) >= 0 ? `+${tr.pnl}` : tr.pnl}
-                    </td>
+                      <span>Qty: {tr.quantity}</span>
+                    </span>
+                    <span>{tr.entry_price || tr.entry} &rarr; {tr.exit_price || tr.exit || '-'}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 truncate">{tr.notes || 'Target Hit'}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Symbol</th>
+                    <th className="py-3 px-4">Broker</th>
+                    <th className="py-3 px-4">Action</th>
+                    <th className="py-3 px-4">Qty</th>
+                    <th className="py-3 px-4">Entry / Exit</th>
+                    <th className="py-3 px-4">Strategy Reason</th>
+                    <th className="py-3 px-4 text-right">Realized P&L</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-mono">
+                  {recentTrades.map((tr) => (
+                    <tr key={tr.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-sans font-medium text-white">{tr.symbol}</td>
+                      <td className="py-3 px-4 text-xs font-sans">
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                          {tr.broker_name || tr.broker}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`text-xs font-semibold ${tr.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {tr.side}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{tr.quantity}</td>
+                      <td className="py-3 px-4 text-xs">
+                        {tr.entry_price || tr.entry} &rarr; {tr.exit_price || tr.exit || '-'}
+                      </td>
+                      <td className="py-3 px-4 text-xs font-sans text-slate-400">{tr.notes || 'Target Hit'}</td>
+                      <td className={`py-3 px-4 text-right font-bold ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {Number(tr.pnl || 0) >= 0 ? `+${tr.pnl}` : tr.pnl}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

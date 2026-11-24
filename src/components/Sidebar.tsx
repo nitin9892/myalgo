@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Cpu, 
@@ -11,7 +12,8 @@ import {
   Lock, 
   ShieldCheck, 
   ShieldAlert,
-  X
+  X,
+  AlertOctagon
 } from 'lucide-react';
 
 const navItems = [
@@ -29,6 +31,29 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const [killSwitchActive, setKillSwitchActive] = useState(false);
+
+  useEffect(() => {
+    const checkKill = () => {
+      try {
+        const item = localStorage.getItem('myalgo_kill_switch');
+        if (item) {
+          const parsed = JSON.parse(item);
+          setKillSwitchActive(!!parsed.active);
+        } else {
+          setKillSwitchActive(false);
+        }
+      } catch {}
+    };
+
+    checkKill();
+    window.addEventListener('storage', checkKill);
+    const interval = setInterval(checkKill, 3000);
+    return () => {
+      window.removeEventListener('storage', checkKill);
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleLockTerminal = () => {
     localStorage.removeItem('myalgo_access_token');
@@ -54,14 +79,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
           </div>
           {onClose && (
-            <button onClick={onClose} className="md:hidden text-slate-400 hover:text-white p-1">
+            <button 
+              onClick={onClose} 
+              className="md:hidden text-slate-400 hover:text-white p-2 rounded-lg bg-slate-800/60"
+              aria-label="Close navigation"
+            >
               <X className="w-5 h-5" />
             </button>
           )}
         </div>
 
         {/* Navigation Links */}
-        <nav className="space-y-1">
+        <nav className="space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -70,14 +99,17 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 key={item.name}
                 href={item.href}
                 onClick={onClose}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                className={`flex items-center gap-3 px-3.5 py-3 sm:py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   isActive
                     ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-sm shadow-emerald-500/10'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 active:bg-slate-800'
                 }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
-                {item.name}
+                <span>{item.name}</span>
+                {item.href === '/risk' && killSwitchActive && (
+                  <span className="ml-auto w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                )}
               </Link>
             );
           })}
@@ -90,29 +122,48 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <Link 
             href="/admin" 
             onClick={onClose}
-            className="flex items-center gap-1.5 text-cyan-400 hover:underline font-semibold"
+            className="flex items-center gap-1.5 text-cyan-400 hover:underline font-semibold py-1"
           >
             <ShieldCheck className="w-4 h-4" /> Admin Portal
           </Link>
           <button
             onClick={handleLockTerminal}
-            className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors font-medium"
+            className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors font-medium py-1"
             title="Lock Terminal"
           >
             <Lock className="w-3.5 h-3.5" /> Lock
           </button>
         </div>
 
-        <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <span>Capital Shield</span>
-            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              Armed
-            </span>
+        {killSwitchActive ? (
+          <Link
+            href="/risk"
+            onClick={onClose}
+            className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/50 space-y-1 block hover:bg-rose-500/25 transition-all"
+          >
+            <div className="flex items-center justify-between text-[11px] text-rose-300">
+              <span className="font-bold flex items-center gap-1.5">
+                <AlertOctagon className="w-3.5 h-3.5 text-rose-400 animate-bounce" />
+                Kill Switch
+              </span>
+              <span className="text-rose-400 font-extrabold text-[10px] px-1.5 py-0.5 rounded bg-rose-500/30 uppercase">
+                HALTED
+              </span>
+            </div>
+            <p className="text-[10px] text-rose-300/80 leading-tight">Trading frozen. Tap to disarm & reset.</p>
+          </Link>
+        ) : (
+          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 space-y-1">
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Capital Shield</span>
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Armed
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-500 leading-tight">Auto-Kill Switch on Daily Loss Breach</p>
           </div>
-          <p className="text-[10px] text-slate-500 leading-tight">Auto-Kill Switch on Daily Loss Breach</p>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -127,7 +178,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Mobile Slide-out Drawer */}
       {isOpen && (
         <div className="fixed inset-0 z-50 md:hidden bg-slate-950/80 backdrop-blur-sm flex">
-          <div className="w-72 bg-slate-900 border-r border-slate-800 h-full shadow-2xl">
+          <div className="w-72 max-w-[85vw] bg-slate-900 border-r border-slate-800 h-full shadow-2xl">
             {content}
           </div>
           <div className="flex-1" onClick={onClose} />

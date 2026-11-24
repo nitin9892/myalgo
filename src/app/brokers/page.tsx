@@ -13,7 +13,9 @@ import {
   Check,
   AlertTriangle,
   Send,
-  HelpCircle
+  HelpCircle,
+  ArrowRightLeft,
+  PowerOff
 } from 'lucide-react';
 
 interface BrokerConfig {
@@ -90,7 +92,7 @@ export default function BrokersPage() {
         { key: 'apiKey', label: 'Delta API Key', placeholder: 'delta_api_key_...' },
         { key: 'apiSecret', label: 'Delta API Secret', placeholder: 'delta_secret_...', isSecret: true },
       ],
-      note: 'Important: In Delta Settings > API Keys, make sure Permissions have "Read" and "Trade" checked, and IP restriction is disabled.',
+      note: 'Important: In Delta Settings > API Keys, make sure Permissions have "Read" and "Trade" checked, and IP restriction includes Render IP or is disabled.',
     },
     {
       id: 'METATRADER',
@@ -157,6 +159,21 @@ export default function BrokersPage() {
     }
   };
 
+  const handleDisconnectBroker = (brokerId: string) => {
+    if (!confirm(`Are you sure you want to disconnect ${brokerId}? This will reveal all brokers so you can choose another.`)) {
+      return;
+    }
+
+    setTestStatus((prev) => {
+      const updated = { ...prev };
+      delete updated[brokerId];
+      try {
+        localStorage.setItem('myalgo_broker_status', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
   const fireDirectOrder = async (broker: BrokerConfig) => {
     const modeText = isLiveMoney ? 'REAL MONEY' : 'PAPER TRADING';
     if (!confirm(`Confirm placing a ${modeText} BUY order on ${broker.name} for ${broker.defaultQty} ${broker.defaultSymbol}?`)) {
@@ -192,6 +209,10 @@ export default function BrokersPage() {
     }
   };
 
+  // Check if any broker is actively connected
+  const connectedBroker = brokers.find((b) => testStatus[b.id]?.success);
+  const displayedBrokers = connectedBroker ? [connectedBroker] : brokers;
+
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Header */}
@@ -202,41 +223,74 @@ export default function BrokersPage() {
             Live Broker Integrations
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Connect live API accounts for Dhan, Delta Exchange, and MetaTrader 5 with real-time execution.
+            Connect your primary trading broker. Only one active broker is maintained at a time for focused execution.
           </p>
         </div>
 
         {/* Live Money vs Paper Toggle */}
-        <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-xl border border-slate-800">
-          <span className="text-xs font-semibold text-slate-300">Execution Mode:</span>
+        <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto">
+          <span className="text-xs font-semibold text-slate-300">Mode:</span>
           <button
             onClick={() => setIsLiveMoney(!isLiveMoney)}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               isLiveMoney
                 ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30'
                 : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
             }`}
           >
-            {isLiveMoney ? '🔴 REAL MONEY LIVE' : '🟢 PAPER TRADING (Safe)'}
+            {isLiveMoney ? '🔴 REAL MONEY LIVE' : '🟢 PAPER TRADING'}
           </button>
         </div>
       </div>
 
+      {/* Active Broker Single Notice & Switch Control */}
+      {connectedBroker ? (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <div>
+              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+                Active Connected Broker (1 / 1)
+              </p>
+              <p className="text-sm font-bold text-white mt-0.5">
+                {connectedBroker.name} is connected. Other brokers are hidden to keep execution single-stream.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => handleDisconnectBroker(connectedBroker.id)}
+            className="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-2 transition-all shrink-0"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-cyan-400" />
+            Switch / Disconnect Broker
+          </button>
+        </div>
+      ) : (
+        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 flex items-center gap-3">
+          <HelpCircle className="w-4 h-4 text-cyan-400 shrink-0" />
+          <span>
+            Select and test one broker below to connect. Once connected, only that broker will be active and the other two will be hidden automatically.
+          </span>
+        </div>
+      )}
+
       {/* Broker Cards */}
       <div className="space-y-6">
-        {brokers.map((broker) => {
+        {displayedBrokers.map((broker) => {
           const status = testStatus[broker.id];
           const orderStat = orderStatus[broker.id];
+          const isConnected = !!status?.success;
+
           return (
-            <div key={broker.id} className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+            <div key={broker.id} className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-bold text-white">{broker.name}</h2>
+                    <h2 className="text-base sm:text-lg font-bold text-white">{broker.name}</h2>
                     <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                       {broker.badge}
                     </span>
-                    {status?.success ? (
+                    {isConnected ? (
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                         CONNECTED (LIVE)
@@ -250,18 +304,29 @@ export default function BrokersPage() {
                   <p className="text-xs text-slate-400 mt-1">{broker.title}</p>
                 </div>
 
-                <a
-                  href={broker.docsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:underline"
-                >
-                  API Docs <ExternalLink className="w-3 h-3" />
-                </a>
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                  {isConnected && (
+                    <button
+                      onClick={() => handleDisconnectBroker(broker.id)}
+                      className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 font-semibold"
+                      title="Disconnect broker"
+                    >
+                      <PowerOff className="w-3.5 h-3.5" /> Disconnect
+                    </button>
+                  )}
+                  <a
+                    href={broker.docsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:underline"
+                  >
+                    Docs <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
               </div>
 
               {/* Live Connected Wallet Balance Banner */}
-              {status?.success && (
+              {isConnected && (
                 <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-950 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -291,11 +356,11 @@ export default function BrokersPage() {
                   <span className="text-slate-300 font-semibold flex items-center gap-1.5">
                     <GlobeIcon className="w-4 h-4 text-cyan-400" /> Account Region:
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={() => updateCred('DELTA', 'region', 'INDIA')}
-                      className={`px-3 py-1 rounded-lg border font-semibold transition-all ${
+                      className={`px-3 py-1.5 rounded-lg border font-semibold transition-all ${
                         credentials.DELTA?.region !== 'GLOBAL'
                           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                           : 'bg-slate-900 text-slate-400 border-slate-800'
@@ -306,7 +371,7 @@ export default function BrokersPage() {
                     <button
                       type="button"
                       onClick={() => updateCred('DELTA', 'region', 'GLOBAL')}
-                      className={`px-3 py-1 rounded-lg border font-semibold transition-all ${
+                      className={`px-3 py-1.5 rounded-lg border font-semibold transition-all ${
                         credentials.DELTA?.region === 'GLOBAL'
                           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
                           : 'bg-slate-900 text-slate-400 border-slate-800'
@@ -328,7 +393,7 @@ export default function BrokersPage() {
                       value={credentials[broker.id]?.[field.key] || ''}
                       onChange={(e) => updateCred(broker.id, field.key, e.target.value)}
                       placeholder={field.placeholder}
-                      className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
+                      className="w-full px-3.5 py-2.5 sm:py-2 text-sm sm:text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
                     />
                   </div>
                 ))}
@@ -344,11 +409,11 @@ export default function BrokersPage() {
 
               {/* Action Buttons & Status */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <button
                     onClick={() => testConnection(broker.id)}
                     disabled={testingBroker === broker.id}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${testingBroker === broker.id ? 'animate-spin' : ''}`} />
                     {testingBroker === broker.id ? 'Testing Auth...' : 'Test Connection'}
@@ -357,7 +422,7 @@ export default function BrokersPage() {
                   <button
                     onClick={() => fireDirectOrder(broker)}
                     disabled={firingOrder === broker.id}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all shadow-md ${
+                    className={`flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-lg text-xs font-bold transition-all shadow-md ${
                       isLiveMoney
                         ? 'bg-rose-500 hover:bg-rose-600 text-white'
                         : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
@@ -368,15 +433,15 @@ export default function BrokersPage() {
                   </button>
                 </div>
 
-                <div className="space-y-1 text-right max-w-md">
+                <div className="space-y-1 text-left sm:text-right max-w-md">
                   {status && (
-                    <div className={`text-xs flex items-start justify-end gap-1.5 ${status.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className={`text-xs flex items-start sm:justify-end gap-1.5 ${status.success ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {status.success ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                       <span>{status.message}</span>
                     </div>
                   )}
                   {orderStat && (
-                    <div className={`text-xs font-semibold flex items-center justify-end gap-1.5 ${orderStat.success ? 'text-emerald-300' : 'text-rose-400'}`}>
+                    <div className={`text-xs font-semibold flex items-center sm:justify-end gap-1.5 ${orderStat.success ? 'text-emerald-300' : 'text-rose-400'}`}>
                       <span>Result: {orderStat.message}</span>
                     </div>
                   )}

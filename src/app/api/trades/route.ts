@@ -14,7 +14,7 @@ export async function GET(request: Request) {
       .from('trades')
       .select('*')
       .eq('status', 'OPEN')
-      .order('timestamp', { ascending: false });
+      .order('entry_time', { ascending: false });
 
     if (openErr) {
       console.error('Error fetching open trades:', openErr);
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       .from('trades')
       .select('*')
       .eq('status', 'CLOSED')
-      .order('timestamp', { ascending: false })
+      .order('entry_time', { ascending: false })
       .limit(20);
 
     if (closedErr) {
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     const { data: todayTrades } = await supabase
       .from('trades')
       .select('pnl, status')
-      .gte('timestamp', todayStart.toISOString())
+      .gte('entry_time', todayStart.toISOString())
       .eq('status', 'CLOSED');
 
     let todayPnl = 0;

@@ -21,6 +21,9 @@ export const DEFAULT_RISK_SETTINGS: RiskSettings = {
   autoSyncWallet: true,
 };
 
+// In-memory runtime cache for serverless & server process persistence
+let runtimeRiskConfig: RiskSettings = { ...DEFAULT_RISK_SETTINGS };
+
 /**
  * Calculates dynamic position size / lot size based on account balance,
  * per-trade risk percentage, and the stop-loss distance in points.
@@ -77,7 +80,7 @@ export function calculateDynamicPositionSize(
 }
 
 /**
- * Fetch risk settings from database or fallback
+ * Fetch risk settings from database or in-memory runtime cache
  */
 export async function getRiskConfiguration(): Promise<RiskSettings> {
   try {
@@ -90,20 +93,22 @@ export async function getRiskConfiguration(): Promise<RiskSettings> {
       .limit(1);
 
     if (data && data.length > 0 && data[0].metadata) {
-      return { ...DEFAULT_RISK_SETTINGS, ...data[0].metadata };
+      runtimeRiskConfig = { ...runtimeRiskConfig, ...data[0].metadata };
+      return runtimeRiskConfig;
     }
   } catch (err) {
-    console.error('Error fetching risk configuration:', err);
+    console.error('Error fetching risk configuration from DB:', err);
   }
-  return DEFAULT_RISK_SETTINGS;
+  return runtimeRiskConfig;
 }
 
 /**
- * Save risk settings to Supabase
+ * Save risk settings to Supabase and update runtime memory cache
  */
 export async function saveRiskConfiguration(settings: Partial<RiskSettings>, adminUser?: string) {
   const current = await getRiskConfiguration();
   const updated: RiskSettings = { ...current, ...settings };
+  runtimeRiskConfig = updated;
 
   try {
     const supabase = getAdminSupabase();
@@ -129,6 +134,15 @@ export async function evaluateDailyLossAndKillSwitch(
   walletBalance: number,
   maxDailyLossPct: number
 ): Promise<{ killSwitchTriggered: boolean; todayNetPnl: number; maxAllowedLoss: number }> {
+  // If already tripped in runtime, remain tripped
+  if (runtimeRiskConfig.killSwitchActive) {
+    return {
+      killSwitchTriggered: true,
+      todayNetPnl: 0,
+      maxAllowedLoss: walletBalance * (maxDailyLossPct / 100),
+    };
+  }
+
   const supabase = getAdminSupabase();
   const maxAllowedLoss = walletBalance * (maxDailyLossPct / 100);
 
@@ -188,7 +202,7 @@ export async function emergencyCloseAllPositions(reason: string) {
         .from('trades')
         .update({
           status: 'CLOSED',
-          exit_price: Number(trade.entry_price), // close at market or entry
+          exit_price: Number(trade.entry_price || 0),
           exit_time: new Date().toISOString(),
           notes: `Emergency closed via ${reason}`,
         })
