@@ -4,7 +4,8 @@ import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrate
 import { 
   getRiskConfiguration, 
   evaluateDailyLossAndKillSwitch, 
-  calculateDynamicPositionSize 
+  calculateDynamicPositionSize,
+  getISTCycleStartTime
 } from '../risk/engine';
 import { BrokerType, OrderRequest } from '../brokers/types';
 
@@ -262,18 +263,17 @@ export async function runTradingEngineCycle() {
       return { success: true, count: 1, logs };
     }
 
-    // 4.25 CHECK MAX TRADES PER DAY LIMIT (Default: 3)
+    // 4.25 CHECK MAX TRADES PER DAY LIMIT (Default: 3, resets at 01:00 AM IST)
     const maxTradesPerDay = masterStrategy.params?.max_trades_per_day || 3;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const cycleStart = getISTCycleStartTime(1);
 
     const { data: todayTrades } = await supabase
       .from('trades')
       .select('id')
-      .gte('entry_time', startOfDay.toISOString());
+      .gte('entry_time', cycleStart.toISOString());
 
     if (todayTrades && todayTrades.length >= maxTradesPerDay) {
-      logs.push(`[${masterStrategy.name}] Daily maximum trades limit (${maxTradesPerDay}) reached for today.`);
+      logs.push(`[${masterStrategy.name}] Daily maximum trades limit (${maxTradesPerDay}) reached for current cycle (since 01:00 AM IST).`);
       return { success: true, count: 0, logs };
     }
 

@@ -19,6 +19,8 @@ export async function GET() {
       maxAllowedDailyLoss: evaluation.maxAllowedLoss,
       isKillSwitchActive: config.killSwitchActive || evaluation.killSwitchTriggered,
       killSwitchReason: config.killSwitchReason,
+      cycleStartTime: evaluation.cycleStartTime,
+      cycleResetTimeIST: '01:00 AM IST',
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

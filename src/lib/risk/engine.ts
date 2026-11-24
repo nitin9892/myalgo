@@ -3,12 +3,13 @@ import { BrokerType } from '../brokers/types';
 
 export interface RiskSettings {
   walletBalance: number;
-  maxDailyLossPct: number;    // e.g. 3.0 = 3% max loss in a single day
-  perTradeRiskPct: number;     // e.g. 1.0 = 1% risk per trade
+  maxDailyLossPct: number;    // e.g. 15.0 = 15% max loss in a single day
+  perTradeRiskPct: number;     // e.g. 5.0 = 5% risk per trade
   maxOpenTrades: number;       // e.g. 2
   killSwitchActive: boolean;   // emergency circuit breaker
   killSwitchReason: string | null;
   autoSyncWallet: boolean;
+  lastKillSwitchTriggerTime?: string | null; // ISO timestamp when kill switch was triggered
 }
 
 export const DEFAULT_RISK_SETTINGS: RiskSettings = {
@@ -19,10 +20,53 @@ export const DEFAULT_RISK_SETTINGS: RiskSettings = {
   killSwitchActive: false,
   killSwitchReason: null,
   autoSyncWallet: true,
+  lastKillSwitchTriggerTime: null,
 };
 
 // In-memory runtime cache for serverless & server process persistence
 let runtimeRiskConfig: RiskSettings = { ...DEFAULT_RISK_SETTINGS };
+
+/**
+ * Calculates the start of the current trading cycle anchored at 01:00 AM IST (UTC+5:30).
+ * 
+ * At 01:00 AM IST every day:
+ * - Realized Daily P&L resets to 0.
+ * - Daily trade count (Max 3 trades a day) resets to 0.
+ * - Daily loss kill switch auto-resets so the new trading day starts fresh.
+ */
+export function getISTCycleStartTime(resetHourIST: number = 1): Date {
+  const now = new Date();
+  const istOffsetMs = 5.5 * 60 * 60 * 1000; // +05:30 in milliseconds
+  
+  // Shift current UTC time to IST virtual clock representation
+  const istDate = new Date(now.getTime() + istOffsetMs);
+  
+  // Set to today's 01:00 AM in IST
+  const cycleStartIST = new Date(istDate);
+  cycleStartIST.setUTCHours(resetHourIST, 0, 0, 0);
+  
+  // If current IST time is before 01:00 AM (e.g. 00:30 AM), cycle began yesterday at 01:00 AM IST
+  if (istDate.getUTCHours() < resetHourIST) {
+    cycleStartIST.setUTCDate(cycleStartIST.getUTCDate() - 1);
+  }
+  
+  // Convert back to standard UTC Date object
+  return new Date(cycleStartIST.getTime() - istOffsetMs);
+}
+
+/**
+ * Returns descriptive info about the IST trading cycle
+ */
+export function getISTCycleInfo() {
+  const cycleStart = getISTCycleStartTime(1);
+  const nextReset = new Date(cycleStart.getTime() + 24 * 60 * 60 * 1000);
+  return {
+    cycleStartUtc: cycleStart.toISOString(),
+    nextResetUtc: nextReset.toISOString(),
+    cycleResetTimeIST: '01:00 AM IST',
+    description: 'Trading cycle runs from 01:00 AM IST to 01:00 AM IST next day',
+  };
+}
 
 /**
  * Calculates dynamic position size / lot size based on account balance,
@@ -108,6 +152,14 @@ export async function getRiskConfiguration(): Promise<RiskSettings> {
 export async function saveRiskConfiguration(settings: Partial<RiskSettings>, adminUser?: string) {
   const current = await getRiskConfiguration();
   const updated: RiskSettings = { ...current, ...settings };
+
+  // Track kill switch trigger timestamp or clear it upon disarming
+  if (settings.killSwitchActive === true && !updated.lastKillSwitchTriggerTime) {
+    updated.lastKillSwitchTriggerTime = new Date().toISOString();
+  } else if (settings.killSwitchActive === false) {
+    updated.lastKillSwitchTriggerTime = null;
+  }
+
   runtimeRiskConfig = updated;
 
   try {
@@ -128,35 +180,58 @@ export async function saveRiskConfiguration(settings: Partial<RiskSettings>, adm
 }
 
 /**
- * Checks today's cumulative P&L and automatically trips Kill Switch if daily loss limit is hit
+ * Checks today's cumulative P&L since 01:00 AM IST and automatically trips Kill Switch if daily loss limit is hit.
+ * Also automatically disarms the kill switch if a previous daily loss trip belongs to a prior 01:00 AM IST cycle.
  */
 export async function evaluateDailyLossAndKillSwitch(
   walletBalance: number,
   maxDailyLossPct: number
-): Promise<{ killSwitchTriggered: boolean; todayNetPnl: number; maxAllowedLoss: number }> {
-  // If already tripped in runtime, remain tripped
-  if (runtimeRiskConfig.killSwitchActive) {
-    return {
-      killSwitchTriggered: true,
-      todayNetPnl: 0,
-      maxAllowedLoss: walletBalance * (maxDailyLossPct / 100),
-    };
-  }
-
+): Promise<{ killSwitchTriggered: boolean; todayNetPnl: number; maxAllowedLoss: number; cycleStartTime: string }> {
+  const cycleStart = getISTCycleStartTime(1);
   const supabase = getAdminSupabase();
   const maxAllowedLoss = walletBalance * (maxDailyLossPct / 100);
 
-  // Get trades executed today
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  // Check if kill switch was tripped by daily loss in an older cycle (before 01:00 AM IST today)
+  if (runtimeRiskConfig.killSwitchActive) {
+    const isDailyLossReason = runtimeRiskConfig.killSwitchReason?.toLowerCase().includes('daily loss');
+    const triggerTime = runtimeRiskConfig.lastKillSwitchTriggerTime
+      ? new Date(runtimeRiskConfig.lastKillSwitchTriggerTime).getTime()
+      : 0;
 
+    // If tripped by daily loss and the trip was prior to current 01:00 AM IST cycle start -> auto-disarm!
+    if (isDailyLossReason && triggerTime > 0 && triggerTime < cycleStart.getTime()) {
+      console.log('🔄 New 01:00 AM IST cycle reached! Auto-disarming daily loss kill switch...');
+      await saveRiskConfiguration({
+        killSwitchActive: false,
+        killSwitchReason: null,
+      });
+
+      try {
+        await supabase.from('system_logs').insert({
+          level: 'INFO',
+          source: 'CYCLE_RESET',
+          message: '🔄 01:00 AM IST Daily Reset: Daily loss circuit breaker disarmed for the new cycle.',
+          metadata: { cycleStartTime: cycleStart.toISOString() },
+        });
+      } catch {}
+    } else {
+      return {
+        killSwitchTriggered: true,
+        todayNetPnl: 0,
+        maxAllowedLoss,
+        cycleStartTime: cycleStart.toISOString(),
+      };
+    }
+  }
+
+  // Get trades executed in the current cycle (since 01:00 AM IST)
   let todayNetPnl = 0;
 
   try {
     const { data: todayTrades } = await supabase
       .from('trades')
       .select('*')
-      .gte('entry_time', startOfDay.toISOString());
+      .gte('entry_time', cycleStart.toISOString());
 
     if (todayTrades) {
       for (const t of todayTrades) {
@@ -164,24 +239,25 @@ export async function evaluateDailyLossAndKillSwitch(
       }
     }
   } catch (err) {
-    console.error('Failed to compute daily P&L:', err);
+    console.error('Failed to compute daily P&L for 01:00 AM IST cycle:', err);
   }
 
-  // If net P&L is negative and exceeds max allowed loss
+  // If net P&L is negative and exceeds max allowed loss (15%)
   if (todayNetPnl < 0 && Math.abs(todayNetPnl) >= maxAllowedLoss) {
     // Trip the Kill Switch!
     await saveRiskConfiguration({
       killSwitchActive: true,
       killSwitchReason: `Daily loss limit of -₹${maxAllowedLoss.toLocaleString()} (${maxDailyLossPct}%) breached. Realized Loss: -₹${Math.abs(todayNetPnl).toLocaleString()}`,
+      lastKillSwitchTriggerTime: new Date().toISOString(),
     });
 
     // Emergency close all open positions
     await emergencyCloseAllPositions(`KILL_SWITCH_DAILY_LOSS_LIMIT (${maxDailyLossPct}%)`);
 
-    return { killSwitchTriggered: true, todayNetPnl, maxAllowedLoss };
+    return { killSwitchTriggered: true, todayNetPnl, maxAllowedLoss, cycleStartTime: cycleStart.toISOString() };
   }
 
-  return { killSwitchTriggered: false, todayNetPnl, maxAllowedLoss };
+  return { killSwitchTriggered: false, todayNetPnl, maxAllowedLoss, cycleStartTime: cycleStart.toISOString() };
 }
 
 /**

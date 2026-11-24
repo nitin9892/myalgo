@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAdminSupabase } from '@/lib/supabase';
 import { getBrokerAdapter } from '@/lib/brokers';
 import { BrokerType, OrderRequest } from '@/lib/brokers/types';
+import { getISTCycleStartTime } from '@/lib/risk/engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,14 +33,13 @@ export async function GET(request: Request) {
       console.error('Error fetching closed trades:', closedErr);
     }
 
-    // Calculate Today Realized P&L & Win Rate
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Calculate Today Realized P&L & Win Rate (Daily cycle resets at 01:00 AM IST)
+    const cycleStart = getISTCycleStartTime(1);
 
     const { data: todayTrades } = await supabase
       .from('trades')
       .select('pnl, status')
-      .gte('entry_time', todayStart.toISOString())
+      .gte('entry_time', cycleStart.toISOString())
       .eq('status', 'CLOSED');
 
     let todayPnl = 0;
@@ -63,6 +63,8 @@ export async function GET(request: Request) {
         winRate,
         totalClosedToday: totalClosed,
         openCount: (openTrades || []).length,
+        cycleStartTime: cycleStart.toISOString(),
+        cycleResetTime: '01:00 AM IST',
       },
     });
   } catch (err: any) {

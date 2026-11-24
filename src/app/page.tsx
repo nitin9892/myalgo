@@ -99,9 +99,21 @@ export default function DashboardPage() {
         if (isServerActive) {
           setKillSwitchActive(true);
           setKillSwitchReason(riskData.killSwitchReason || 'Emergency Kill Switch engaged');
-        } else if (!localKill) {
-          setKillSwitchActive(false);
-          setKillSwitchReason(null);
+        } else {
+          // If server disarmed kill switch (e.g. 01:00 AM IST cycle reset), clear local daily-loss flag
+          if (localKill) {
+            try {
+              const parsed = JSON.parse(localKill);
+              if (parsed.reason?.toLowerCase().includes('daily loss')) {
+                localStorage.removeItem('myalgo_kill_switch');
+              }
+            } catch {}
+          }
+          const freshLocal = localStorage.getItem('myalgo_kill_switch');
+          if (!freshLocal) {
+            setKillSwitchActive(false);
+            setKillSwitchReason(null);
+          }
         }
       }
 
@@ -233,7 +245,7 @@ export default function DashboardPage() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time execution dashboard for {activeStrategyInfo.name} on [{activeStrategyInfo.symbols.join(', ')}].
+            Real-time execution dashboard for {activeStrategyInfo.name} on [{activeStrategyInfo.symbols.join(', ')}] • Daily cycle resets at 01:00 AM IST.
           </p>
         </div>
 
@@ -341,8 +353,10 @@ export default function DashboardPage() {
               {stats.todayPnl >= 0 ? '+' : ''}{stats.todayPnl.toFixed(2)} USDT
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5">
-            {stats.totalClosedToday} closed trades today (real verified)
+          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+            <span>{stats.totalClosedToday} closed trades</span>
+            <span className="text-slate-500">•</span>
+            <span className="text-emerald-400/90 font-medium">01:00 AM IST Reset</span>
           </p>
         </div>
 
@@ -374,8 +388,10 @@ export default function DashboardPage() {
               {stats.totalClosedToday > 0 ? `${stats.winRate}%` : '0%'}
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5">
-            {stats.totalClosedToday} closed trades today
+          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+            <span>{stats.totalClosedToday} trades</span>
+            <span className="text-slate-500">•</span>
+            <span className="text-slate-400">01:00 AM IST cycle</span>
           </p>
         </div>
 
