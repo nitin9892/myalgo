@@ -47,6 +47,8 @@ export class DeltaAdapter implements IBrokerAdapter {
     const endpoints = ['/v2/positions', '/v2/wallet/balances'];
     let lastErrorCode = '';
     let lastErrorDetail = '';
+    let detectedIp = '';
+    let matchedRegion = '';
 
     for (const url of priorityUrls) {
       for (const path of endpoints) {
@@ -71,13 +73,27 @@ export class DeltaAdapter implements IBrokerAdapter {
             };
           }
 
-          // Parse Delta error body: {"error":{"code":"invalid_api_key"},"success":false}
+          // Parse Delta error body: {"error":{"code":"ip_not_whitelisted_for_api_key","context":{"client_ip":"..."}}}
           try {
             const data = await res.json();
             const code = data.error?.code || data.code || '';
             const msg = data.error?.message || data.message || '';
-            lastErrorCode = code;
-            lastErrorDetail = msg || code;
+            const clientIp = data.error?.context?.client_ip || '';
+
+            if (clientIp) detectedIp = clientIp;
+
+            // If Delta recognized the key on this server (e.g. IP whitelist error, signature error)
+            if (code && code !== 'invalid_api_key') {
+              lastErrorCode = code;
+              lastErrorDetail = msg || code;
+              matchedRegion = url.includes('india') ? 'Delta India' : 'Delta Global';
+              break;
+            }
+
+            if (!lastErrorCode || lastErrorCode === 'invalid_api_key') {
+              lastErrorCode = code || lastErrorCode;
+              lastErrorDetail = msg || code || lastErrorDetail;
+            }
           } catch {
             lastErrorDetail = `HTTP ${res.status}`;
           }
@@ -85,22 +101,29 @@ export class DeltaAdapter implements IBrokerAdapter {
           lastErrorDetail = err.message || 'Network connection failed';
         }
       }
+
+      // If we found an IP whitelist or signature error, key exists! Stop overwriting with subsequent URLs
+      if (lastErrorCode && lastErrorCode !== 'invalid_api_key') {
+        break;
+      }
     }
 
     // Construct human-friendly explanation for the exact Delta error code
     let diagnosticAdvice = `Delta Error (${lastErrorCode || lastErrorDetail})`;
 
-    if (lastErrorCode === 'invalid_api_key') {
+    if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist') || detectedIp) {
+      diagnosticAdvice = `🚨 IP Whitelist Required on ${matchedRegion || 'Delta Exchange'}!
+Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
+👉 Fix: Go to Delta Settings > API Keys > edit your key > paste "${detectedIp}" in "Whitelisted IP address" and Save.`;
+    } else if (lastErrorCode === 'invalid_api_key') {
       diagnosticAdvice = `Invalid API Key (invalid_api_key). Delta Exchange does not recognize this key. Please check:
 1. Is your account on Delta India (india.delta.exchange) or Delta Global (delta.exchange)? Switch the region button above accordingly.
 2. Did you create this key on Delta Testnet (demo) instead of Live Delta? Live keys are required.
 3. Check for any missing or truncated characters.`;
     } else if (lastErrorCode === 'signature_mismatch' || lastErrorCode === 'invalid_signature') {
-      diagnosticAdvice = `Signature Mismatch. Your API Secret does not match the API Key. Please re-copy the Secret from Delta.`;
+      diagnosticAdvice = `Signature Mismatch on ${matchedRegion || 'Delta'}. Your API Secret does not match the API Key. Please re-copy the Secret from Delta.`;
     } else if (lastErrorCode === 'expired_signature') {
       diagnosticAdvice = `Timestamp Expired. Delta requires server clock to match within 5 seconds. Retrying...`;
-    } else if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist')) {
-      diagnosticAdvice = `IP Restricted. The API key has an IP whitelist enabled in Delta. Please set IP Restriction to "None" in Delta API Settings.`;
     } else if (lastErrorCode.includes('permission') || lastErrorCode.includes('scope')) {
       diagnosticAdvice = `Missing Permissions. The API key must have "Read" and "Trade" permissions checked in Delta settings.`;
     }
