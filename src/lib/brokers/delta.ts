@@ -9,8 +9,8 @@ export class DeltaAdapter implements IBrokerAdapter {
   private baseUrl: string;
 
   constructor(apiKey?: string, apiSecret?: string, isIndia: boolean = true) {
-    this.apiKey = (apiKey || process.env.DELTA_API_KEY || '').trim();
-    this.apiSecret = (apiSecret || process.env.DELTA_API_SECRET || '').trim();
+    this.apiKey = (apiKey || process.env.DELTA_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
+    this.apiSecret = (apiSecret || process.env.DELTA_API_SECRET || '').trim().replace(/^['"]|['"]$/g, '');
     this.isIndia = isIndia;
     this.baseUrl = isIndia ? 'https://api.india.delta.exchange' : 'https://api.delta.exchange';
   }
@@ -39,16 +39,16 @@ export class DeltaAdapter implements IBrokerAdapter {
       return { success: false, message: 'Please enter both Delta API Key and API Secret' };
     }
 
-    // Try both regional base URLs (India and Global)
-    const urlsToTry = this.isIndia
-      ? ['https://api.india.delta.exchange', 'https://api.delta.exchange']
-      : ['https://api.delta.exchange', 'https://api.india.delta.exchange'];
+    // Try all regional base URLs (India Live, Global Live, and Testnet)
+    const priorityUrls = this.isIndia
+      ? ['https://api.india.delta.exchange', 'https://api.delta.exchange', 'https://cdn-ind.testnet.deltaex.org', 'https://testnet-api.delta.exchange']
+      : ['https://api.delta.exchange', 'https://api.india.delta.exchange', 'https://testnet-api.delta.exchange', 'https://cdn-ind.testnet.deltaex.org'];
 
     const endpoints = ['/v2/positions', '/v2/wallet/balances'];
     let lastErrorCode = '';
     let lastErrorDetail = '';
 
-    for (const url of urlsToTry) {
+    for (const url of priorityUrls) {
       for (const path of endpoints) {
         try {
           const headers = this.getAuthHeaders('GET', path);
@@ -58,11 +58,16 @@ export class DeltaAdapter implements IBrokerAdapter {
           });
 
           if (res.ok) {
-            const regionName = url.includes('india') ? 'Delta India' : 'Delta Global';
+            let regionName = 'Delta Exchange';
+            if (url.includes('cdn-ind.testnet')) regionName = 'Delta India (Testnet Demo)';
+            else if (url.includes('testnet-api')) regionName = 'Delta Global (Testnet Demo)';
+            else if (url.includes('india')) regionName = 'Delta India (Live)';
+            else regionName = 'Delta Global (Live)';
+
             this.baseUrl = url;
             return {
               success: true,
-              message: `✅ Connected successfully to ${regionName}! Live account verified.`,
+              message: `✅ Connected successfully to ${regionName}! Account verified.`,
             };
           }
 
@@ -73,9 +78,6 @@ export class DeltaAdapter implements IBrokerAdapter {
             const msg = data.error?.message || data.message || '';
             lastErrorCode = code;
             lastErrorDetail = msg || code;
-
-            // If we found a specific non-404 error code from Delta, break inner loop
-            if (code) break;
           } catch {
             lastErrorDetail = `HTTP ${res.status}`;
           }
