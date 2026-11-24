@@ -13,7 +13,10 @@ import {
   ShieldCheck,
   TrendingDown,
   Gauge,
-  Plus
+  Plus,
+  ArrowUpRight,
+  ArrowDownRight,
+  Target
 } from 'lucide-react';
 
 export default function StrategiesPage() {
@@ -340,6 +343,95 @@ export default function StrategiesPage() {
           </div>
           <span className="px-3 py-1 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 font-black text-xs">
             Medium Mode (5x-10x)
+          </span>
+        </div>
+      </div>
+
+      {/* 6 Core Setups Rule Matrix (PDH, PDL, PDC) */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Layers className="w-5 h-5 text-emerald-400" />
+            <h2 className="text-base font-bold text-white">6 Core Setups Engine (PDH • PDL • PDC)</h2>
+          </div>
+          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+            1:3 Target Ratio
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Strategy evaluates 6 core setups based on Yesterday High (PDH), Low (PDL), and Close (PDC). Entry triggers when the next candle breaks the signal candle high/low. Stop Loss is set at the opposite end of the signal candle.
+        </p>
+
+        {/* Setups Table */}
+        <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800 text-[11px]">
+              <tr>
+                <th className="py-2.5 px-3">Key Level</th>
+                <th className="py-2.5 px-3">BUY Setup (1:3 RR)</th>
+                <th className="py-2.5 px-3">SELL Setup (1:3 RR)</th>
+                <th className="py-2.5 px-3">Stop Loss Rule</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800 font-mono">
+              <tr className="hover:bg-slate-800/30 transition-colors">
+                <td className="py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Yesterday High (PDH)
+                </td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">
+                  Setup 1: PDH Breakout BUY
+                </td>
+                <td className="py-2.5 px-3 text-rose-400 font-bold">
+                  Setup 2: PDH Breakdown SELL
+                </td>
+                <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">
+                  Signal Candle Opposite End
+                </td>
+              </tr>
+              <tr className="hover:bg-slate-800/30 transition-colors">
+                <td className="py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                  Yesterday Low (PDL)
+                </td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">
+                  Setup 3: PDL Breakout BUY
+                </td>
+                <td className="py-2.5 px-3 text-rose-400 font-bold">
+                  Setup 4: PDL Breakdown SELL
+                </td>
+                <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">
+                  Signal Candle Opposite End
+                </td>
+              </tr>
+              <tr className="hover:bg-slate-800/30 transition-colors bg-emerald-500/5">
+                <td className="py-2.5 px-3 font-sans font-bold text-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  Yesterday Close (PDC)
+                </td>
+                <td className="py-2.5 px-3 text-emerald-400 font-bold">
+                  Setup 5: PDC Breakout BUY
+                </td>
+                <td className="py-2.5 px-3 text-rose-400 font-bold">
+                  Setup 6: PDC Breakdown SELL
+                </td>
+                <td className="py-2.5 px-3 text-slate-400 font-sans text-[11px]">
+                  Signal Candle Opposite End
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Rule Highlight Pill */}
+        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+          <span className="text-slate-300 font-medium flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span><strong>Target Formula:</strong> Entry ± (3 × SL Points) [Strict 1:3 RR]</span>
+          </span>
+          <span className="text-amber-400/90 font-medium">
+            Next candle confirmation required
           </span>
         </div>
       </div>

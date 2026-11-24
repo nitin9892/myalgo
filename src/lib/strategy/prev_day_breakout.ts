@@ -38,6 +38,9 @@ export interface StrategyEvaluationResult {
   blockReason?: string;
   isForceSquareOff: boolean;
   signal: 'BUY' | 'SELL' | null;
+  setupNumber?: 1 | 2 | 3 | 4 | 5 | 6;
+  setupName?: string;
+  riskReward?: string;
   entryPrice?: number;
   stopLoss?: number;
   target?: number;
@@ -45,6 +48,16 @@ export interface StrategyEvaluationResult {
   targetPoints?: number;
   levelBroken?: string;
   signalReason?: string;
+  pendingSetup?: {
+    setupNumber: 1 | 2 | 3 | 4 | 5 | 6;
+    setupName: string;
+    levelName: string;
+    levelPrice: number;
+    direction: 'BUY' | 'SELL';
+    triggerPrice: number;
+    stopLoss: number;
+    target: number;
+  };
   exitSignal?: {
     shouldExit: boolean;
     reason: 'SL_HIT' | 'TARGET_HIT' | 'TIME_EXIT_1530' | null;
@@ -281,63 +294,179 @@ export function evaluatePrevDayBreakout(
   const isGreen = signalCandle.close > signalCandle.open;
   const isRed = signalCandle.close < signalCandle.open;
 
+  // --------------------------------------------------------------------------
+  // 2. ENTRY RULES (Evaluates 6 Core Setups across PDH, PDL, PDC)
+  // --------------------------------------------------------------------------
+  // Level            BUY (Setup #)                    SELL (Setup #)
+  // Yesterday High   Setup 1 (PDH Breakout BUY)       Setup 2 (PDH Breakdown SELL)
+  // Yesterday Low    Setup 3 (PDL Breakout BUY)       Setup 4 (PDL Breakdown SELL)
+  // Yesterday Close  Setup 5 (PDC Breakout BUY)       Setup 6 (PDC Breakdown SELL)
+  // 
+  // Rule:
+  // - Close-level setups: SL = Signal candle opposite end (Low for BUY, High for SELL)
+  // - Target = Strict 1:3 Risk to Reward (Entry ± 3 * SL Points)
+  // - Trigger = Next candle breaks Signal candle High (for BUY) or Low (for SELL)
+  // --------------------------------------------------------------------------
+
   const { prevHigh, prevLow, prevClose } = levels;
-  const monitoredLevels = [
-    { name: 'PREV_HIGH', val: prevHigh },
-    { name: 'PREV_LOW', val: prevLow },
-    { name: 'PREV_CLOSE', val: prevClose },
+  const levelConfigs = [
+    { type: 'PDH' as const, name: 'Yesterday High (PDH)', val: prevHigh, buySetupNum: 1 as const, sellSetupNum: 2 as const },
+    { type: 'PDL' as const, name: 'Yesterday Low (PDL)', val: prevLow, buySetupNum: 3 as const, sellSetupNum: 4 as const },
+    { type: 'PDC' as const, name: 'Yesterday Close (PDC)', val: prevClose, buySetupNum: 5 as const, sellSetupNum: 6 as const },
   ].filter((lvl) => typeof lvl.val === 'number' && lvl.val > 0);
 
-  const slMode = params.slCandleMode || 'signal_candle';
+  if (levelConfigs.length === 0) {
+    result.blockReason = 'Waiting for valid PDH, PDL, PDC key levels';
+    return result;
+  }
 
-  // Check LONG breakout: GREEN candle breaks & closes above a key level
-  if (isGreen) {
-    for (const lvl of monitoredLevels) {
-      if (prevCandle.close <= lvl.val && signalCandle.close > lvl.val) {
-        const entryPrice = signalCandle.high;
-        const initialSl = slMode === 'prev_candle' ? prevCandle.low : signalCandle.low;
-        let slPoints = Math.max(1, entryPrice - initialSl);
+  // We evaluate 2 scenarios for maximum responsiveness:
+  // Scenario 1: signalCandle is candles[n - 2] (closed candle), trigger checked on candles[n - 1] (or livePrice)
+  // Scenario 2: signalCandle is candles[n - 1] (just closed), trigger checked against livePrice
+  const evalPairs: Array<{
+    signalCandle: Candle;
+    prevCandle: Candle;
+    triggerCandle: Candle;
+    isCurrentCandleActive: boolean;
+  }> = [];
 
-        // Target: 1:3 Risk to Reward
-        const targetPoints = slPoints * 3;
-        const target = entryPrice + targetPoints;
+  const n = candles.length;
+  if (n >= 3) {
+    // Standard confirmed 2-candle sequence: candle[n-2] broke level, candle[n-1] is triggering high/low
+    evalPairs.push({
+      signalCandle: candles[n - 2],
+      prevCandle: candles[n - 3],
+      triggerCandle: candles[n - 1],
+      isCurrentCandleActive: true,
+    });
+  }
+  if (n >= 2) {
+    // Just-closed candle breakout: candle[n-1] broke level, livePrice is triggering high/low
+    evalPairs.push({
+      signalCandle: candles[n - 1],
+      prevCandle: candles[n - 2],
+      triggerCandle: candles[n - 1],
+      isCurrentCandleActive: false,
+    });
+  }
 
-        result.signal = 'BUY';
-        result.entryPrice = Number(entryPrice.toFixed(2));
-        result.stopLoss = Number(initialSl.toFixed(2));
-        result.target = Number(target.toFixed(2));
-        result.slPoints = Number(slPoints.toFixed(2));
-        result.targetPoints = Number(targetPoints.toFixed(2));
-        result.levelBroken = `${lvl.name} (${lvl.val})`;
-        result.signalReason = `5m Green candle broke & closed above ${lvl.name} (${lvl.val}) @ ${signalCandle.close}. Entry @ High ${entryPrice}`;
-        return result;
+  for (const pair of evalPairs) {
+    const { signalCandle, prevCandle, triggerCandle } = pair;
+    const isGreen = signalCandle.close > signalCandle.open;
+    const isRed = signalCandle.close < signalCandle.open;
+
+    for (const lvl of levelConfigs) {
+      // ----------------------------------------------------------------------
+      // BUY SETUPS (Setup 1: PDH, Setup 3: PDL, Setup 5: PDC)
+      // Condition: Bullish candle breaks & closes above the level
+      // Trigger: Next candle (or live price) breaks bullish candle's HIGH
+      // ----------------------------------------------------------------------
+      if (isGreen) {
+        const brokeAbove = prevCandle.close <= lvl.val && signalCandle.close > lvl.val;
+        const reclaimedAbove = signalCandle.low <= lvl.val && signalCandle.close > lvl.val;
+
+        if (brokeAbove || (lvl.type === 'PDL' && reclaimedAbove)) {
+          const entryPrice = signalCandle.high;
+          const stopLoss = signalCandle.low; // Opposite end of signal candle
+          const slPoints = Math.max(0.5, entryPrice - stopLoss);
+          const targetPoints = slPoints * 3; // Strict 1:3 RR
+          const target = entryPrice + targetPoints;
+          const setupNum = lvl.buySetupNum;
+          const setupName = `Setup ${setupNum}: ${lvl.name} Breakout BUY`;
+
+          // Check if trigger occurred: Next candle high >= signal candle high OR livePrice >= signal candle high
+          const hasBrokenHigh = triggerCandle.high >= signalCandle.high || livePrice >= signalCandle.high;
+
+          if (hasBrokenHigh) {
+            result.signal = 'BUY';
+            result.setupNumber = setupNum;
+            result.setupName = setupName;
+            result.levelBroken = `${lvl.type} (${lvl.val})`;
+            result.entryPrice = Number(entryPrice.toFixed(2));
+            result.stopLoss = Number(stopLoss.toFixed(2));
+            result.target = Number(target.toFixed(2));
+            result.slPoints = Number(slPoints.toFixed(2));
+            result.targetPoints = Number(targetPoints.toFixed(2));
+            result.riskReward = '1:3';
+            result.signalReason = `[${setupName}] 5m Bullish candle closed above ${lvl.name} (${lvl.val}) @ ${signalCandle.close}. Next candle broke High @ ${entryPrice}. SL: ${stopLoss} (Low), 1:3 Target: ${target}.`;
+            return result;
+          } else {
+            // Signal candle closed above level, but high not yet broken
+            if (!result.pendingSetup) {
+              result.pendingSetup = {
+                setupNumber: setupNum,
+                setupName,
+                levelName: lvl.name,
+                levelPrice: lvl.val,
+                direction: 'BUY',
+                triggerPrice: entryPrice,
+                stopLoss,
+                target,
+              };
+            }
+          }
+        }
+      }
+
+      // ----------------------------------------------------------------------
+      // SELL SETUPS (Setup 2: PDH, Setup 4: PDL, Setup 6: PDC)
+      // Condition: Bearish candle breaks & closes below the level
+      // Trigger: Next candle (or live price) breaks bearish candle's LOW
+      // ----------------------------------------------------------------------
+      if (isRed) {
+        const brokeBelow = prevCandle.close >= lvl.val && signalCandle.close < lvl.val;
+        const rejectedBelow = signalCandle.high >= lvl.val && signalCandle.close < lvl.val;
+
+        if (brokeBelow || (lvl.type === 'PDH' && rejectedBelow)) {
+          const entryPrice = signalCandle.low;
+          const stopLoss = signalCandle.high; // Opposite end of signal candle
+          const slPoints = Math.max(0.5, stopLoss - entryPrice);
+          const targetPoints = slPoints * 3; // Strict 1:3 RR
+          const target = entryPrice - targetPoints;
+          const setupNum = lvl.sellSetupNum;
+          const setupName = `Setup ${setupNum}: ${lvl.name} Breakdown SELL`;
+
+          // Check if trigger occurred: Next candle low <= signal candle low OR livePrice <= signal candle low
+          const hasBrokenLow = triggerCandle.low <= signalCandle.low || livePrice <= signalCandle.low;
+
+          if (hasBrokenLow) {
+            result.signal = 'SELL';
+            result.setupNumber = setupNum;
+            result.setupName = setupName;
+            result.levelBroken = `${lvl.type} (${lvl.val})`;
+            result.entryPrice = Number(entryPrice.toFixed(2));
+            result.stopLoss = Number(stopLoss.toFixed(2));
+            result.target = Number(target.toFixed(2));
+            result.slPoints = Number(slPoints.toFixed(2));
+            result.targetPoints = Number(targetPoints.toFixed(2));
+            result.riskReward = '1:3';
+            result.signalReason = `[${setupName}] 5m Bearish candle closed below ${lvl.name} (${lvl.val}) @ ${signalCandle.close}. Next candle broke Low @ ${entryPrice}. SL: ${stopLoss} (High), 1:3 Target: ${target}.`;
+            return result;
+          } else {
+            // Signal candle closed below level, but low not yet broken
+            if (!result.pendingSetup) {
+              result.pendingSetup = {
+                setupNumber: setupNum,
+                setupName,
+                levelName: lvl.name,
+                levelPrice: lvl.val,
+                direction: 'SELL',
+                triggerPrice: entryPrice,
+                stopLoss,
+                target,
+              };
+            }
+          }
+        }
       }
     }
   }
 
-  // Check SHORT breakout: RED candle breaks & closes below a key level
-  if (isRed) {
-    for (const lvl of monitoredLevels) {
-      if (prevCandle.close >= lvl.val && signalCandle.close < lvl.val) {
-        const entryPrice = signalCandle.low;
-        const initialSl = slMode === 'prev_candle' ? prevCandle.high : signalCandle.high;
-        let slPoints = Math.max(1, initialSl - entryPrice);
-
-        // Target: 1:3 Risk to Reward
-        const targetPoints = slPoints * 3;
-        const target = entryPrice - targetPoints;
-
-        result.signal = 'SELL';
-        result.entryPrice = Number(entryPrice.toFixed(2));
-        result.stopLoss = Number(initialSl.toFixed(2));
-        result.target = Number(target.toFixed(2));
-        result.slPoints = Number(slPoints.toFixed(2));
-        result.targetPoints = Number(targetPoints.toFixed(2));
-        result.levelBroken = `${lvl.name} (${lvl.val})`;
-        result.signalReason = `5m Red candle broke & closed below ${lvl.name} (${lvl.val}) @ ${signalCandle.close}. Entry @ Low ${entryPrice}`;
-        return result;
-      }
-    }
+  if (result.pendingSetup) {
+    const p = result.pendingSetup;
+    result.blockReason = `⏳ [${p.setupName}] Signal candle closed across ${p.levelName} (${p.levelPrice}). Waiting for next candle to break ${p.direction === 'BUY' ? 'High' : 'Low'} @ ${p.triggerPrice}`;
+  } else {
+    result.blockReason = `Scanning 5m feed for 6 setups across PDH (${prevHigh}), PDL (${prevLow}), PDC (${prevClose})`;
   }
 
   return result;

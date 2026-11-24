@@ -56,6 +56,58 @@ export const DEFAULT_MASTER_STRATEGY: SingleStrategyConfig = {
   },
 };
 
+async function resolveKeyLevels(
+  adapter: any,
+  symbol: string,
+  candles: any[],
+  currentPrice: number,
+  params: any
+): Promise<KeyLevels> {
+  let prevHigh = Number(params?.prev_high);
+  let prevLow = Number(params?.prev_low);
+  let prevClose = Number(params?.prev_close);
+
+  if (prevHigh > 0 && prevLow > 0 && prevClose > 0) {
+    return { prevHigh, prevLow, prevClose };
+  }
+
+  // Attempt to fetch true 1D (daily) candles for exact Yesterday High (PDH), Low (PDL), Close (PDC)
+  try {
+    const dailyCandles = await adapter.getLatestCandles(symbol, '1d', 5);
+    if (dailyCandles && dailyCandles.length >= 2) {
+      const yesterday = dailyCandles[dailyCandles.length - 2];
+      if (yesterday && yesterday.high > 0 && yesterday.low > 0 && yesterday.close > 0) {
+        return {
+          prevHigh: Number(yesterday.high.toFixed(2)),
+          prevLow: Number(yesterday.low.toFixed(2)),
+          prevClose: Number(yesterday.close.toFixed(2)),
+        };
+      }
+    }
+  } catch {}
+
+  // Fallback: derive from 5m candles history
+  if (candles && candles.length >= 15) {
+    const lookback = candles.slice(0, Math.max(1, candles.length - 10));
+    const highs = lookback.map((c) => c.high);
+    const lows = lookback.map((c) => c.low);
+    prevHigh = Math.max(...highs);
+    prevLow = Math.min(...lows);
+    prevClose = lookback[lookback.length - 1]?.close || currentPrice;
+    return {
+      prevHigh: Number(prevHigh.toFixed(2)),
+      prevLow: Number(prevLow.toFixed(2)),
+      prevClose: Number(prevClose.toFixed(2)),
+    };
+  }
+
+  return {
+    prevHigh: Number((currentPrice * 1.015).toFixed(2)),
+    prevLow: Number((currentPrice * 0.985).toFixed(2)),
+    prevClose: Number(currentPrice.toFixed(2)),
+  };
+}
+
 export async function runTradingEngineCycle() {
   const supabase = getAdminSupabase();
   const logs: string[] = [];
@@ -139,22 +191,17 @@ export async function runTradingEngineCycle() {
     const activeTrade = openTrades && openTrades.length > 0 ? openTrades[0] : null;
 
     // ------------------------------------------------------------------------
-    // 3. KEY LEVELS (PREV HIGH, LOW, CLOSE)
+    // 3. KEY LEVELS (PREV HIGH [PDH], PREV LOW [PDL], PREV CLOSE [PDC])
     // ------------------------------------------------------------------------
+    const levels: KeyLevels = await resolveKeyLevels(
+      adapter,
+      activeSymbol,
+      candles,
+      currentPrice,
+      masterStrategy.params
+    );
+
     const p = masterStrategy.params;
-    let prevHigh = Number(p.prev_high);
-    let prevLow = Number(p.prev_low);
-    let prevClose = Number(p.prev_close);
-
-    if (!prevHigh || !prevLow || !prevClose) {
-      const highs = candles.map((c) => c.high);
-      const lows = candles.map((c) => c.low);
-      prevHigh = Math.max(...highs.slice(0, -10));
-      prevLow = Math.min(...lows.slice(0, -10));
-      prevClose = candles[candles.length - 15]?.close || currentPrice;
-    }
-
-    const levels: KeyLevels = { prevHigh, prevLow, prevClose };
     const strategyParams: BreakoutStrategyParams = {
       slCandleMode: p.sl_candle_mode || 'signal_candle',
       maxTradesPerDay: p.max_trades_per_day || 3,
@@ -311,6 +358,7 @@ export async function runTradingEngineCycle() {
       });
 
       if (orderResult.success) {
+        const setupTag = evalRes.setupName ? `[${evalRes.setupName}]` : '[Breakout Engine]';
         await supabase.from('trades').insert({
           strategy_id: masterStrategy.id,
           broker_name: masterStrategy.broker_name,
@@ -323,22 +371,26 @@ export async function runTradingEngineCycle() {
           status: 'OPEN',
           paper_trade: masterStrategy.paper_trading,
           broker_order_id: orderResult.orderId,
-          notes: `${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} | Medium Leverage: ${mediumLeverage}x (Risk: ₹${sizing.effectiveRisk})`,
+          notes: `${setupTag} ${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} | Medium Leverage: ${mediumLeverage}x (Risk: ₹${sizing.effectiveRisk})`,
         });
 
         await supabase.from('system_logs').insert({
           level: 'TRADE_SIGNAL',
           source: `ENGINE_${masterStrategy.broker_name}`,
-          message: `[${masterStrategy.name}] ENTRY TRIGGERED: ${signal} ${sizing.quantity} ${masterStrategy.symbol} @ ${entryPrice} (SL: ${stopLoss}, 1:3 TP: ${takeProfit}) | Risk: ₹${sizing.effectiveRisk}`,
-          metadata: { orderResult, sizing, evalRes },
+          message: `[${masterStrategy.name}] ${setupTag} ENTRY TRIGGERED: ${signal} ${sizing.quantity} ${activeSymbol} @ ${entryPrice} (SL: ${stopLoss}, 1:3 TP: ${takeProfit}) | Risk: ₹${sizing.effectiveRisk}`,
+          metadata: { orderResult, sizing, evalRes, levels },
         });
 
-        logs.push(`SUCCESS: Placed ${signal} order (${sizing.quantity} qty) @ ${entryPrice}`);
+        logs.push(`SUCCESS: Placed ${signal} order (${sizing.quantity} qty) @ ${entryPrice} via ${setupTag}`);
         return { success: true, count: 1, logs };
       }
     }
 
-    logs.push(`[${masterStrategy.name}] Price: ${currentPrice} | Window: ${evalRes.blockReason || 'SCANNING 5M FEED'} | Position: ${activeTrade ? 'ACTIVE' : 'NONE'}`);
+    const statusNote = evalRes.pendingSetup
+      ? `[${evalRes.pendingSetup.setupName}] Waiting for trigger @ ${evalRes.pendingSetup.triggerPrice}`
+      : (evalRes.blockReason || 'SCANNING 5M FEED');
+
+    logs.push(`[${masterStrategy.name}] Price: ${currentPrice} | Levels: PDH ${levels.prevHigh}, PDL ${levels.prevLow}, PDC ${levels.prevClose} | Status: ${statusNote} | Position: ${activeTrade ? 'ACTIVE' : 'NONE'}`);
     return { success: true, count: 1, logs };
   } catch (err: any) {
     logs.push(`Engine Error: ${err.message}`);
