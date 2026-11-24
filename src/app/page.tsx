@@ -12,7 +12,12 @@ import {
   RefreshCw,
   Zap,
   Sliders,
-  DollarSign
+  DollarSign,
+  ShieldCheck,
+  ShieldAlert,
+  Wallet,
+  Clock,
+  XOctagon
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -20,87 +25,67 @@ export default function DashboardPage() {
   const [isRunningCycle, setIsRunningCycle] = useState(false);
   const [cycleResult, setCycleResult] = useState<any>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [squaringOffId, setSquaringOffId] = useState<string | null>(null);
 
-  // Sample or Supabase live state
+  // Live Stats State
   const [stats, setStats] = useState({
-    todayPnl: 14250.00,
-    winRate: 68.4,
-    totalTrades: 38,
+    todayPnl: 0,
+    winRate: 0,
+    totalClosedToday: 0,
+    openCount: 0,
     activeStrategies: 2,
     totalStrategies: 3,
   });
 
-  const [activePositions, setActivePositions] = useState([
-    {
-      id: 'pos-1',
-      symbol: 'NIFTY 24200 CE',
-      broker: 'DHAN',
-      side: 'BUY',
-      quantity: 50,
-      entryPrice: 145.20,
-      currentPrice: 172.80,
-      pnl: 1380.00,
-      pnlPct: 19.0,
-      paperTrade: true,
-    },
-    {
-      id: 'pos-2',
-      symbol: 'BTCUSD PERP',
-      broker: 'DELTA',
-      side: 'BUY',
-      quantity: 0.25,
-      entryPrice: 94850.00,
-      currentPrice: 95400.00,
-      pnl: 137.50,
-      pnlPct: 0.58,
-      paperTrade: true,
-    },
-  ]);
+  const [activePositions, setActivePositions] = useState<any[]>([]);
+  const [recentTrades, setRecentTrades] = useState<any[]>([]);
+  const [killSwitchActive, setKillSwitchActive] = useState(false);
+  const [killSwitchReason, setKillSwitchReason] = useState<string | null>(null);
+  const [connectedBrokers, setConnectedBrokers] = useState<Record<string, any>>({});
 
-  const [recentTrades, setRecentTrades] = useState([
-    {
-      id: 'tr-1',
-      symbol: 'EURUSD',
-      broker: 'METATRADER',
-      side: 'SELL',
-      quantity: 0.1,
-      entry: 1.0890,
-      exit: 1.0850,
-      pnl: 40.00,
-      status: 'CLOSED',
-      time: '10 mins ago',
-      notes: 'RSI Overbought Reversal',
-    },
-    {
-      id: 'tr-2',
-      symbol: 'NIFTY FUT',
-      broker: 'DHAN',
-      side: 'BUY',
-      quantity: 25,
-      entry: 24100.00,
-      exit: 24220.00,
-      pnl: 3000.00,
-      status: 'CLOSED',
-      time: '1 hour ago',
-      notes: '9/21 EMA Bullish Cross',
-    },
-    {
-      id: 'tr-3',
-      symbol: 'ETHUSD PERP',
-      broker: 'DELTA',
-      side: 'SELL',
-      quantity: 1.5,
-      entry: 3380.00,
-      exit: 3410.00,
-      pnl: -45.00,
-      status: 'CLOSED',
-      time: '2 hours ago',
-      notes: 'Supertrend Stop Loss Hit',
-    },
-  ]);
+  const fetchDashboardData = async () => {
+    try {
+      // 1. Fetch live trades & stats
+      const tradesRes = await fetch('/api/trades');
+      const tradesData = await tradesRes.json();
+      if (tradesData.success) {
+        setActivePositions(tradesData.openPositions || []);
+        setRecentTrades(tradesData.recentTrades || []);
+        if (tradesData.stats) {
+          setStats((prev) => ({
+            ...prev,
+            todayPnl: tradesData.stats.todayPnl,
+            winRate: tradesData.stats.winRate,
+            totalClosedToday: tradesData.stats.totalClosedToday,
+            openCount: tradesData.stats.openCount,
+          }));
+        }
+      }
+
+      // 2. Fetch risk & kill switch status
+      const riskRes = await fetch('/api/risk');
+      const riskData = await riskRes.json();
+      if (riskData) {
+        setKillSwitchActive(riskData.isKillSwitchActive || false);
+        setKillSwitchReason(riskData.killSwitchReason || null);
+      }
+
+      // 3. Read connected brokers from localStorage
+      const savedBrokerStatus = localStorage.getItem('myalgo_broker_status');
+      if (savedBrokerStatus) {
+        setConnectedBrokers(JSON.parse(savedBrokerStatus));
+      }
+
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('Failed to sync dashboard data:', err);
+    }
+  };
 
   useEffect(() => {
-    setLastUpdated(new Date().toLocaleTimeString());
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 4000);
+    return () => clearInterval(interval);
   }, []);
 
   // Trigger one trade cycle manually
@@ -110,7 +95,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/cron/trade-cycle');
       const data = await res.json();
       setCycleResult(data);
-      setLastUpdated(new Date().toLocaleTimeString());
+      await fetchDashboardData();
     } catch (err: any) {
       setCycleResult({ error: err.message });
     } finally {
@@ -118,19 +103,60 @@ export default function DashboardPage() {
     }
   };
 
+  // Emergency Square Off single position
+  const handleSquareOff = async (pos: any) => {
+    if (!confirm(`Are you sure you want to Square Off position ${pos.side} ${pos.quantity} ${pos.symbol}?`)) {
+      return;
+    }
+
+    setSquaringOffId(pos.id);
+    try {
+      const savedCreds = localStorage.getItem('myalgo_broker_creds');
+      const creds = savedCreds ? JSON.parse(savedCreds) : {};
+
+      const res = await fetch('/api/trades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SQUARE_OFF',
+          tradeId: pos.id,
+          broker: pos.broker_name || pos.broker,
+          symbol: pos.symbol,
+          side: pos.side,
+          quantity: pos.quantity,
+          exitPrice: pos.current_price || pos.entry_price || 0,
+          credentials: creds[pos.broker_name || pos.broker],
+        }),
+      });
+
+      const data = await res.json();
+      alert(data.message || 'Position squared off!');
+      await fetchDashboardData();
+    } catch (err: any) {
+      alert(`Square-off failed: ${err.message}`);
+    } finally {
+      setSquaringOffId(null);
+    }
+  };
+
+  const isDeltaConnected = connectedBrokers.DELTA?.success;
+  const isDhanConnected = connectedBrokers.DHAN?.success;
+  const isMT5Connected = connectedBrokers.METATRADER?.success;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Top Banner / Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             Algo Trading Control Center
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               Live Ready
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Multi-broker automated execution for <span className="text-slate-200 font-medium">Dhan</span>, <span className="text-slate-200 font-medium">Delta Exchange</span> & <span className="text-slate-200 font-medium">MetaTrader</span>.
+            Automated multi-broker execution with 5m candle breakout, step trailing, and capital protection.
           </p>
         </div>
 
@@ -138,16 +164,76 @@ export default function DashboardPage() {
           <button
             onClick={triggerCycleNow}
             disabled={isRunningCycle}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
           >
             <Play className={`w-4 h-4 fill-slate-950 ${isRunningCycle ? 'animate-spin' : ''}`} />
-            {isRunningCycle ? 'Checking Signals...' : 'Run Trade Cycle Now'}
+            {isRunningCycle ? 'Evaluating 5m Feeds...' : 'Run Trade Cycle Now'}
           </button>
           <div className="text-xs text-slate-500 flex items-center gap-1">
-            <RefreshCw className="w-3 h-3" /> Updated {lastUpdated}
+            <RefreshCw className="w-3 h-3" /> Sync {lastUpdated || 'Live'}
           </div>
         </div>
       </div>
+
+      {/* Connected Brokers Live Ribbon */}
+      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shadow-md">
+        <div className="flex items-center gap-2">
+          <Wallet className="w-4 h-4 text-emerald-400" />
+          <span className="font-semibold text-slate-300">Broker Execution Status:</span>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Delta Exchange Pill */}
+          <span className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 ${
+            isDeltaConnected 
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
+              : 'bg-slate-800 text-slate-400 border-slate-700/60'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isDeltaConnected ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
+            Delta: {isDeltaConnected ? (connectedBrokers.DELTA?.balanceDisplay || 'Connected') : 'Not Connected'}
+          </span>
+
+          {/* DhanHQ Pill */}
+          <span className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 ${
+            isDhanConnected 
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
+              : 'bg-slate-800 text-slate-400 border-slate-700/60'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isDhanConnected ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
+            Dhan: {isDhanConnected ? 'Ready (NSE)' : 'Standby'}
+          </span>
+
+          {/* MetaTrader 5 Pill */}
+          <span className={`px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1.5 ${
+            isMT5Connected 
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' 
+              : 'bg-slate-800 text-slate-400 border-slate-700/60'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isMT5Connected ? 'bg-emerald-400' : 'bg-slate-500'}`}></span>
+            MT5: {isMT5Connected ? 'IPC Bridge Online' : 'Bridge Ready'}
+          </span>
+
+          <Link href="/brokers" className="text-cyan-400 hover:underline font-semibold ml-1">
+            Configure &rarr;
+          </Link>
+        </div>
+      </div>
+
+      {/* Kill Switch Triggered Alert Banner */}
+      {killSwitchActive && (
+        <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 flex items-center justify-between gap-3 shadow-lg shadow-rose-950/40">
+          <div className="flex items-center gap-3">
+            <XOctagon className="w-6 h-6 text-rose-400 shrink-0 animate-pulse" />
+            <div>
+              <p className="font-bold text-sm text-white">EMERGENCY KILL SWITCH ACTIVATED</p>
+              <p className="text-xs text-rose-300 mt-0.5">{killSwitchReason || 'Max Daily Loss limit breached. All automated trading halted.'}</p>
+            </div>
+          </div>
+          <Link href="/risk" className="px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors shadow">
+            Reset Kill Switch
+          </Link>
+        </div>
+      )}
 
       {/* Cycle Result Alert if manually fired */}
       {cycleResult && (
@@ -165,19 +251,23 @@ export default function DashboardPage() {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Today P&L */}
+        {/* Card 1: Today Realized P&L */}
         <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>Today's Realized P&L</span>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            {stats.todayPnl >= 0 ? (
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <TrendingDown className="w-4 h-4 text-rose-400" />
+            )}
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-emerald-400 font-mono">
-              +₹{stats.todayPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            <span className={`text-2xl font-bold font-mono ${stats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {stats.todayPnl >= 0 ? '+' : ''}₹{stats.todayPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-            <span className="text-emerald-400 font-medium">+14.2%</span> vs yesterday
+            Across <span className="text-white font-semibold">{stats.totalClosedToday}</span> closed trades today
           </p>
         </div>
 
@@ -192,7 +282,7 @@ export default function DashboardPage() {
               {stats.activeStrategies} <span className="text-sm text-slate-400 font-normal">/ {stats.totalStrategies}</span>
             </span>
           </div>
-          <Link href="/strategies" className="text-xs text-cyan-400 hover:underline mt-2 inline-block">
+          <Link href="/strategies" className="text-xs text-cyan-400 hover:underline mt-2 inline-block font-semibold">
             Manage strategies &rarr;
           </Link>
         </div>
@@ -207,132 +297,162 @@ export default function DashboardPage() {
             <span className="text-2xl font-bold text-white font-mono">{stats.winRate}%</span>
           </div>
           <p className="text-xs text-slate-400 mt-2">
-            Across {stats.totalTrades} closed trades
+            Performance ratio today
           </p>
         </div>
 
-        {/* Card 4: Execution Engine Mode */}
+        {/* Card 4: Capital Protection */}
         <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Trading Mode</span>
-            <Sliders className="w-4 h-4 text-amber-400" />
+            <span>Capital Protection</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-lg font-bold text-amber-300">Paper Trading</span>
+            <span className={`text-lg font-bold ${killSwitchActive ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {killSwitchActive ? 'HALTED' : 'ARMED & ACTIVE'}
+            </span>
           </div>
-          <p className="text-xs text-slate-400 mt-2">
-            Simulated money (Zero capital risk)
-          </p>
+          <Link href="/risk" className="text-xs text-emerald-400 hover:underline mt-2 inline-block font-semibold">
+            Risk & SL settings &rarr;
+          </Link>
         </div>
       </div>
 
       {/* Active Live Positions */}
-      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800">
-        <div className="flex items-center justify-between mb-4">
+      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
             Open Positions ({activePositions.length})
           </h2>
-          <span className="text-xs text-slate-400">Auto-managed by strategy stop loss & targets</span>
+          <span className="text-xs text-slate-400">1:3 RR targets & 10pt step trailing active</span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
-              <tr>
-                <th className="py-3 px-4">Symbol</th>
-                <th className="py-3 px-4">Broker</th>
-                <th className="py-3 px-4">Side</th>
-                <th className="py-3 px-4">Quantity</th>
-                <th className="py-3 px-4">Entry Price</th>
-                <th className="py-3 px-4">Current Price</th>
-                <th className="py-3 px-4 text-right">Unrealized P&L</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 font-mono">
-              {activePositions.map((pos) => {
-                const isProfitable = pos.pnl >= 0;
-                return (
-                  <tr key={pos.id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-sans font-semibold text-white flex items-center gap-2">
-                      {pos.symbol}
-                      {pos.paperTrade && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans">
-                          PAPER
+          {activePositions.length === 0 ? (
+            <div className="py-12 text-center text-slate-500 text-xs font-sans">
+              <Zap className="w-8 h-8 mx-auto mb-2 opacity-30 text-emerald-400" />
+              <p className="text-sm font-semibold text-slate-400">No active positions open right now.</p>
+              <p className="mt-1">Waiting for fresh 5m candle breakout signals (09:15 - 15:30).</p>
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm text-slate-300">
+              <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Symbol</th>
+                  <th className="py-3 px-4">Broker</th>
+                  <th className="py-3 px-4">Side</th>
+                  <th className="py-3 px-4">Quantity</th>
+                  <th className="py-3 px-4">Entry Price</th>
+                  <th className="py-3 px-4">Current Price</th>
+                  <th className="py-3 px-4 text-right">Unrealized P&L</th>
+                  <th className="py-3 px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 font-mono">
+                {activePositions.map((pos) => {
+                  const entry = Number(pos.entry_price || pos.entryPrice || 0);
+                  const curr = Number(pos.current_price || pos.currentPrice || entry);
+                  const pnl = Number(pos.pnl || (pos.side === 'BUY' ? (curr - entry) * pos.quantity : (entry - curr) * pos.quantity));
+                  const isProfitable = pnl >= 0;
+
+                  return (
+                    <tr key={pos.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 px-4 font-sans font-semibold text-white flex items-center gap-2">
+                        {pos.symbol}
+                        {pos.paper_trade && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans font-bold">
+                            PAPER
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs font-sans">
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                          {pos.broker_name || pos.broker}
                         </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs font-sans">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                        {pos.broker}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                        pos.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                          pos.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                          {pos.side}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">{pos.quantity}</td>
+                      <td className="py-3.5 px-4">{entry}</td>
+                      <td className="py-3.5 px-4">{curr}</td>
+                      <td className={`py-3.5 px-4 text-right font-bold ${
+                        isProfitable ? 'text-emerald-400' : 'text-rose-400'
                       }`}>
-                        {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                        {pos.side}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">{pos.quantity}</td>
-                    <td className="py-3.5 px-4">{pos.entryPrice}</td>
-                    <td className="py-3.5 px-4">{pos.currentPrice}</td>
-                    <td className={`py-3.5 px-4 text-right font-bold ${
-                      isProfitable ? 'text-emerald-400' : 'text-rose-400'
-                    }`}>
-                      {isProfitable ? '+' : ''}{pos.pnl} ({isProfitable ? '+' : ''}{pos.pnlPct}%)
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        {isProfitable ? '+' : ''}{pnl.toFixed(2)}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <button
+                          onClick={() => handleSquareOff(pos)}
+                          disabled={squaringOffId === pos.id}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-all disabled:opacity-50"
+                        >
+                          {squaringOffId === pos.id ? 'Exiting...' : 'Square Off'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
       {/* Recent Completed Trades */}
-      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800">
+      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
         <h2 className="text-lg font-semibold text-white mb-4">Recent Executed Trades</h2>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
-              <tr>
-                <th className="py-3 px-4">Symbol</th>
-                <th className="py-3 px-4">Broker</th>
-                <th className="py-3 px-4">Action</th>
-                <th className="py-3 px-4">Qty</th>
-                <th className="py-3 px-4">Entry / Exit</th>
-                <th className="py-3 px-4">Strategy Reason</th>
-                <th className="py-3 px-4 text-right">Realized P&L</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 font-mono">
-              {recentTrades.map((tr) => (
-                <tr key={tr.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3 px-4 font-sans font-medium text-white">{tr.symbol}</td>
-                  <td className="py-3 px-4 text-xs font-sans">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                      {tr.broker}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`text-xs font-semibold ${tr.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {tr.side}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">{tr.quantity}</td>
-                  <td className="py-3 px-4 text-xs">
-                    {tr.entry} &rarr; {tr.exit}
-                  </td>
-                  <td className="py-3 px-4 text-xs font-sans text-slate-400">{tr.notes}</td>
-                  <td className={`py-3 px-4 text-right font-bold ${tr.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {tr.pnl >= 0 ? `+${tr.pnl}` : tr.pnl}
-                  </td>
+          {recentTrades.length === 0 ? (
+            <div className="py-8 text-center text-slate-500 text-xs font-sans">
+              No recent closed trades yet. Closed trades will show here automatically.
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm text-slate-300">
+              <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Symbol</th>
+                  <th className="py-3 px-4">Broker</th>
+                  <th className="py-3 px-4">Action</th>
+                  <th className="py-3 px-4">Qty</th>
+                  <th className="py-3 px-4">Entry / Exit</th>
+                  <th className="py-3 px-4">Strategy Reason</th>
+                  <th className="py-3 px-4 text-right">Realized P&L</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-800 font-mono">
+                {recentTrades.map((tr) => (
+                  <tr key={tr.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-4 font-sans font-medium text-white">{tr.symbol}</td>
+                    <td className="py-3 px-4 text-xs font-sans">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        {tr.broker_name || tr.broker}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`text-xs font-semibold ${tr.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {tr.side}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">{tr.quantity}</td>
+                    <td className="py-3 px-4 text-xs">
+                      {tr.entry_price || tr.entry} &rarr; {tr.exit_price || tr.exit || '-'}
+                    </td>
+                    <td className="py-3 px-4 text-xs font-sans text-slate-400">{tr.notes || 'Target Hit'}</td>
+                    <td className={`py-3 px-4 text-right font-bold ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {Number(tr.pnl || 0) >= 0 ? `+${tr.pnl}` : tr.pnl}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
