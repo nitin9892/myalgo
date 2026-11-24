@@ -8,7 +8,7 @@ import {
   Wallet, 
   Terminal, 
   Activity, 
-  ExternalLink,
+  Lock,
   ShieldCheck
 } from 'lucide-react';
 
@@ -21,6 +21,12 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+
+  const handleLockTerminal = () => {
+    localStorage.removeItem('myalgo_access_token');
+    document.cookie = 'myalgo_access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    window.location.reload();
+  };
 
   return (
     <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between p-4 shrink-0">
@@ -62,17 +68,27 @@ export function Sidebar() {
         </nav>
       </div>
 
-      {/* Footer Info */}
-      <div className="pt-4 border-t border-slate-800 text-xs text-slate-500 space-y-2 px-2">
+      {/* Footer Controls & Admin Link */}
+      <div className="pt-4 border-t border-slate-800 text-xs text-slate-500 space-y-3 px-2">
         <div className="flex items-center justify-between text-slate-400">
-          <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Vercel Serverless
-          </span>
-          <span className="text-emerald-400">Online</span>
+          <Link 
+            href="/admin" 
+            className="flex items-center gap-1.5 text-cyan-400 hover:underline font-semibold"
+          >
+            <ShieldCheck className="w-4 h-4" /> Admin Portal
+          </Link>
+          <button
+            onClick={handleLockTerminal}
+            className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors"
+            title="Lock Terminal"
+          >
+            <Lock className="w-3.5 h-3.5" /> Lock
+          </button>
         </div>
-        <div className="flex items-center justify-between text-slate-400">
-          <span>Connected DB</span>
-          <span className="text-cyan-400">Supabase</span>
+
+        <div className="flex items-center justify-between text-[11px] text-slate-600">
+          <span>Protected Terminal</span>
+          <span className="text-emerald-500 font-medium">Access Code Mode</span>
         </div>
       </div>
     </aside>

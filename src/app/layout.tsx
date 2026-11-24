@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Sidebar } from '@/components/Sidebar';
+import { AppShell } from '@/components/AppShell';
 
 export const metadata: Metadata = {
   title: 'MyAlgo | Automated Trading Engine',
@@ -14,11 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-slate-950 text-slate-100 min-h-screen flex antialiased">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto max-h-screen p-8">
+      <body className="bg-slate-950 text-slate-100 min-h-screen antialiased">
+        <AppShell>
           {children}
-        </main>
+        </AppShell>
       </body>
     </html>
   );
