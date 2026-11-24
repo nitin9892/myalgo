@@ -8,9 +8,10 @@ export function getBrokerAdapter(type: BrokerType, credentials?: any): IBrokerAd
     case 'DHAN':
       return new DhanAdapter(credentials?.clientId, credentials?.accessToken);
     case 'DELTA':
-      return new DeltaAdapter(credentials?.apiKey, credentials?.apiSecret);
+      const isIndia = credentials?.region !== 'GLOBAL';
+      return new DeltaAdapter(credentials?.apiKey, credentials?.apiSecret, isIndia);
     case 'METATRADER':
-      return new MetaTraderAdapter(credentials?.bridgeSecret);
+      return new MetaTraderAdapter(credentials?.bridgeSecret, credentials?.metaApiToken, credentials?.metaApiAccountId);
     default:
       throw new Error(`Unsupported broker type: ${type}`);
   }

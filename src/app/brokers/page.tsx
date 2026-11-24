@@ -12,7 +12,8 @@ import {
   Zap,
   Check,
   AlertTriangle,
-  Send
+  Send,
+  HelpCircle
 } from 'lucide-react';
 
 interface BrokerConfig {
@@ -24,6 +25,7 @@ interface BrokerConfig {
   defaultQty: number;
   docsUrl: string;
   fields: { key: string; label: string; placeholder: string; isSecret?: boolean }[];
+  note?: string;
 }
 
 export default function BrokersPage() {
@@ -35,7 +37,7 @@ export default function BrokersPage() {
   // Credentials state
   const [credentials, setCredentials] = useState<Record<string, Record<string, string>>>({
     DHAN: { clientId: '', accessToken: '' },
-    DELTA: { apiKey: '', apiSecret: '' },
+    DELTA: { apiKey: '', apiSecret: '', region: 'INDIA' },
     METATRADER: { bridgeSecret: 'mt5_bridge_secret_key_2026', metaApiToken: '', metaApiAccountId: '' },
   });
 
@@ -54,6 +56,7 @@ export default function BrokersPage() {
         { key: 'clientId', label: 'Dhan Client ID (10 digits)', placeholder: '1000xxxxxx' },
         { key: 'accessToken', label: 'Dhan 24hr Access Token (JWT)', placeholder: 'eyJhbGciOi...', isSecret: true },
       ],
+      note: 'Generate a 24-hour Access Token from Dhan Web > My Profile > DhanHQ Trading APIs.',
     },
     {
       id: 'DELTA',
@@ -67,6 +70,7 @@ export default function BrokersPage() {
         { key: 'apiKey', label: 'Delta API Key', placeholder: 'delta_api_key_...' },
         { key: 'apiSecret', label: 'Delta API Secret', placeholder: 'delta_secret_...', isSecret: true },
       ],
+      note: 'Important: In Delta Settings > API Keys, make sure Permissions have "Read" and "Trade" checked, and IP restriction is disabled.',
     },
     {
       id: 'METATRADER',
@@ -80,6 +84,7 @@ export default function BrokersPage() {
         { key: 'bridgeSecret', label: 'Local Bridge Secret Token', placeholder: 'mt5_bridge_secret_key_2026', isSecret: true },
         { key: 'metaApiToken', label: 'MetaApi Cloud Token (Optional for 100% cloud)', placeholder: 'metaapi-token-optional', isSecret: true },
       ],
+      note: 'Run "python mt5_bridge/mt5_runner.py" on Windows PC for instant local terminal execution.',
     },
   ];
 
@@ -206,8 +211,41 @@ export default function BrokersPage() {
                 </a>
               </div>
 
+              {/* Special Region selector for Delta */}
+              {broker.id === 'DELTA' && (
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                    <GlobeIcon className="w-4 h-4 text-cyan-400" /> Account Region:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateCred('DELTA', 'region', 'INDIA')}
+                      className={`px-3 py-1 rounded-lg border font-semibold transition-all ${
+                        credentials.DELTA?.region !== 'GLOBAL'
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                          : 'bg-slate-900 text-slate-400 border-slate-800'
+                      }`}
+                    >
+                      Delta India (india.delta.exchange)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateCred('DELTA', 'region', 'GLOBAL')}
+                      className={`px-3 py-1 rounded-lg border font-semibold transition-all ${
+                        credentials.DELTA?.region === 'GLOBAL'
+                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                          : 'bg-slate-900 text-slate-400 border-slate-800'
+                      }`}
+                    >
+                      Delta Global (delta.exchange)
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Form Input Fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 {broker.fields.map((field) => (
                   <div key={field.key} className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-300">{field.label}</label>
@@ -222,6 +260,14 @@ export default function BrokersPage() {
                 ))}
               </div>
 
+              {/* Helpful Hint */}
+              {broker.note && (
+                <p className="text-[11px] text-slate-400 flex items-start gap-1.5 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/60">
+                  <HelpCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                  <span>{broker.note}</span>
+                </p>
+              )}
+
               {/* Action Buttons & Status */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
                 <div className="flex items-center gap-2">
@@ -231,7 +277,7 @@ export default function BrokersPage() {
                     className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${testingBroker === broker.id ? 'animate-spin' : ''}`} />
-                    {testingBroker === broker.id ? 'Testing...' : 'Test Connection'}
+                    {testingBroker === broker.id ? 'Testing Auth...' : 'Test Connection'}
                   </button>
 
                   <button
@@ -248,10 +294,10 @@ export default function BrokersPage() {
                   </button>
                 </div>
 
-                <div className="space-y-1 text-right">
+                <div className="space-y-1 text-right max-w-md">
                   {status && (
-                    <div className={`text-xs flex items-center justify-end gap-1.5 ${status.success ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {status.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                    <div className={`text-xs flex items-start justify-end gap-1.5 ${status.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {status.success ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                       <span>{status.message}</span>
                     </div>
                   )}
@@ -267,5 +313,15 @@ export default function BrokersPage() {
         })}
       </div>
     </div>
+  );
+}
+
+function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+      <path d="M2 12h20"/>
+    </svg>
   );
 }

@@ -5,60 +5,91 @@ export class DeltaAdapter implements IBrokerAdapter {
   name: 'DELTA' = 'DELTA';
   private apiKey: string;
   private apiSecret: string;
+  private isIndia: boolean;
   private baseUrl: string;
 
   constructor(apiKey?: string, apiSecret?: string, isIndia: boolean = true) {
-    this.apiKey = apiKey || process.env.DELTA_API_KEY || '';
-    this.apiSecret = apiSecret || process.env.DELTA_API_SECRET || '';
-    // Delta Exchange India vs Global
+    this.apiKey = (apiKey || process.env.DELTA_API_KEY || '').trim();
+    this.apiSecret = (apiSecret || process.env.DELTA_API_SECRET || '').trim();
+    this.isIndia = isIndia;
     this.baseUrl = isIndia ? 'https://api.india.delta.exchange' : 'https://api.delta.exchange';
   }
 
-  private generateSignature(method: string, path: string, payload: string, timestamp: number): string {
-    const message = method + timestamp + path + payload;
+  private generateSignature(method: string, path: string, queryStr: string, payload: string, timestamp: string): string {
+    // Delta HMAC-SHA256 signature specification: METHOD + TIMESTAMP + PATH + QUERY_STRING + PAYLOAD
+    const message = method.toUpperCase() + timestamp + path + queryStr + payload;
     return CryptoJS.HmacSHA256(message, this.apiSecret).toString(CryptoJS.enc.Hex);
   }
 
-  private getAuthHeaders(method: string, path: string, payload: string = '') {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = this.generateSignature(method, path, payload, timestamp);
+  private getAuthHeaders(method: string, path: string, queryStr: string = '', payload: string = '') {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const signature = this.generateSignature(method, path, queryStr, payload, timestamp);
     return {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'MyAlgo-Trading-Terminal/1.0',
       'api-key': this.apiKey,
       'signature': signature,
-      'timestamp': timestamp.toString(),
+      'timestamp': timestamp,
     };
   }
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
     if (!this.apiKey || !this.apiSecret) {
-      return { success: false, message: 'Delta API Key or Secret not configured' };
+      return { success: false, message: 'Please enter both Delta API Key and API Secret' };
     }
-    try {
-      const path = '/v2/wallet/balances';
-      const headers = this.getAuthHeaders('GET', path);
-      const res = await fetch(`${this.baseUrl}${path}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        return { 
-          success: true, 
-          message: `Connected to Delta Exchange! Balances synced.` 
-        };
-      }
-      // If India endpoint failed, try fallback
-      if (this.baseUrl.includes('india')) {
-        const globalRes = await fetch(`https://api.delta.exchange${path}`, {
-          headers: this.getAuthHeaders('GET', path),
-        });
-        if (globalRes.ok) {
-          this.baseUrl = 'https://api.delta.exchange';
-          return { success: true, message: 'Connected to Delta Exchange (Global)!' };
+
+    // Try both regional base URLs (India and Global) to auto-detect user's account region
+    const urlsToTry = this.isIndia
+      ? ['https://api.india.delta.exchange', 'https://api.delta.exchange']
+      : ['https://api.delta.exchange', 'https://api.india.delta.exchange'];
+
+    // Try standard authenticated endpoints: /v2/positions or /v2/wallet/balances
+    const endpoints = ['/v2/positions', '/v2/wallet/balances'];
+
+    let lastError = 'Delta Auth Failed: HTTP 401';
+
+    for (const url of urlsToTry) {
+      for (const path of endpoints) {
+        try {
+          const headers = this.getAuthHeaders('GET', path);
+          const res = await fetch(`${url}${path}`, {
+            method: 'GET',
+            headers,
+          });
+
+          if (res.ok) {
+            const regionName = url.includes('india') ? 'Delta India' : 'Delta Global';
+            this.baseUrl = url;
+            return {
+              success: true,
+              message: `Connected successfully to ${regionName}! Authentication verified.`,
+            };
+          }
+
+          // Parse detailed error message from Delta
+          try {
+            const data = await res.json();
+            if (data.error?.message) {
+              lastError = `${data.error.message} (${data.error?.code || res.status})`;
+            } else if (data.message) {
+              lastError = `${data.message} (${res.status})`;
+            } else {
+              lastError = `HTTP ${res.status}: ${res.statusText || 'Unauthorized'}`;
+            }
+          } catch {
+            lastError = `HTTP ${res.status}: Unauthorized`;
+          }
+        } catch (err: any) {
+          lastError = err.message || 'Connection network error';
         }
       }
-      return { success: false, message: `Delta Auth Failed: HTTP ${res.status}` };
-    } catch (err: any) {
-      return { success: false, message: err.message || 'Delta connection failed' };
     }
+
+    return {
+      success: false,
+      message: `Delta Auth Failed: ${lastError}. Make sure API Key has "Read & Trade" permissions and belongs to India or Global Delta Exchange.`,
+    };
   }
 
   async getLatestCandles(symbol: string = 'BTCUSD', timeframe: string = '1m', count: number = 50): Promise<Candle[]> {
@@ -116,7 +147,7 @@ export class DeltaAdapter implements IBrokerAdapter {
       }
 
       const payload = JSON.stringify(payloadObj);
-      const headers = this.getAuthHeaders('POST', path, payload);
+      const headers = this.getAuthHeaders('POST', path, '', payload);
 
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
