@@ -35,6 +35,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const handleResetKillSwitch = async () => {
+    if (!confirm('Disarm Kill Switch and resume normal trading?')) return;
+    try {
+      localStorage.removeItem('myalgo_kill_switch');
+    } catch {}
+    setKillSwitchActive(false);
+    try {
+      await fetch('/api/risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resetKillSwitch: true }),
+      });
+      alert('Kill Switch Disarmed.');
+      window.location.reload();
+    } catch {}
+  };
+
   if (isAdminPath) {
     return (
       <main className="min-h-screen w-full bg-slate-950 p-4 sm:p-6 md:p-10">
@@ -60,13 +77,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2">
             {killSwitchActive && (
-              <Link
-                href="/risk"
-                className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center gap-1 animate-pulse"
+              <button
+                onClick={handleResetKillSwitch}
+                className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-500 text-white flex items-center gap-1 animate-pulse shadow"
               >
-                <AlertOctagon className="w-3 h-3 text-rose-400" />
-                KILL SWITCH
-              </Link>
+                <AlertOctagon className="w-3 h-3 text-white" />
+                KILL SWITCH (DISARM)
+              </button>
             )}
 
             <button

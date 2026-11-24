@@ -19,7 +19,6 @@ import {
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Strategy Engine', href: '/strategies', icon: Cpu },
-  { name: 'Risk & Capital', href: '/risk', icon: ShieldAlert },
   { name: 'Brokers & APIs', href: '/brokers', icon: Wallet },
   { name: 'Logs & Audit', href: '/logs', icon: Terminal },
 ];
@@ -61,6 +60,41 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     window.location.reload();
   };
 
+  const handleTriggerKillSwitch = async () => {
+    if (!confirm('EMERGENCY KILL SWITCH: Immediately close all open trades and freeze trading?')) return;
+    const reason = 'Manual emergency kill switch triggered by user';
+    try {
+      localStorage.setItem('myalgo_kill_switch', JSON.stringify({ active: true, reason, timestamp: Date.now() }));
+    } catch {}
+    setKillSwitchActive(true);
+    try {
+      await fetch('/api/risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ triggerEmergencyKill: true }),
+      });
+      alert('🚨 Kill Switch Activated! All positions squared off & trading halted.');
+      window.location.reload();
+    } catch {}
+  };
+
+  const handleResetKillSwitch = async () => {
+    if (!confirm('Disarm Kill Switch and resume normal trading?')) return;
+    try {
+      localStorage.removeItem('myalgo_kill_switch');
+    } catch {}
+    setKillSwitchActive(false);
+    try {
+      await fetch('/api/risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resetKillSwitch: true }),
+      });
+      alert('Kill Switch Disarmed. Normal trading resumed.');
+      window.location.reload();
+    } catch {}
+  };
+
   const content = (
     <div className="flex flex-col justify-between h-full p-4">
       <div>
@@ -74,7 +108,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <h1 className="font-bold text-lg text-white tracking-wide">MyAlgo</h1>
               <p className="text-xs text-emerald-400 font-medium flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Auto Trading Engine
+                Live Crypto Engine
               </p>
             </div>
           </div>
@@ -89,7 +123,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           )}
         </div>
 
-        {/* Navigation Links */}
+        {/* Navigation Links (No Risk page link) */}
         <nav className="space-y-1.5">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -107,16 +141,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
                 <span>{item.name}</span>
-                {item.href === '/risk' && killSwitchActive && (
-                  <span className="ml-auto w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-                )}
               </Link>
             );
           })}
         </nav>
       </div>
 
-      {/* Footer Controls & Admin Link */}
+      {/* Footer Controls & Emergency Kill Switch Shifted Here */}
       <div className="pt-4 border-t border-slate-800 text-xs text-slate-500 space-y-3 px-2">
         <div className="flex items-center justify-between text-slate-400">
           <Link 
@@ -135,12 +166,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </button>
         </div>
 
+        {/* Emergency Kill Switch Control Shifted to Sidebar Footer */}
         {killSwitchActive ? (
-          <Link
-            href="/risk"
-            onClick={onClose}
-            className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/50 space-y-1 block hover:bg-rose-500/25 transition-all"
-          >
+          <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/60 space-y-2">
             <div className="flex items-center justify-between text-[11px] text-rose-300">
               <span className="font-bold flex items-center gap-1.5">
                 <AlertOctagon className="w-3.5 h-3.5 text-rose-400 animate-bounce" />
@@ -150,10 +178,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 HALTED
               </span>
             </div>
-            <p className="text-[10px] text-rose-300/80 leading-tight">Trading frozen. Tap to disarm & reset.</p>
-          </Link>
+            <button
+              onClick={handleResetKillSwitch}
+              className="w-full py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-[11px] transition-colors shadow text-center"
+            >
+              Disarm Kill Switch
+            </button>
+          </div>
         ) : (
-          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 space-y-1">
+          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 space-y-2">
             <div className="flex items-center justify-between text-[11px] text-slate-400">
               <span>Capital Shield</span>
               <span className="text-emerald-400 font-semibold flex items-center gap-1">
@@ -161,7 +194,12 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 Armed
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 leading-tight">Auto-Kill Switch on Daily Loss Breach</p>
+            <button
+              onClick={handleTriggerKillSwitch}
+              className="w-full py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-bold transition-all text-center"
+            >
+              🚨 Emergency Kill Switch
+            </button>
           </div>
         )}
       </div>
