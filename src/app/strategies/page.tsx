@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 
 export default function StrategiesPage() {
-  // Step 1: Strategy A, B, or C
-  const [selectedStrategy, setSelectedStrategy] = useState<'Strategy A' | 'Strategy B' | 'Strategy C'>('Strategy A');
+  // Step 1: Strategy A, B, or C (Strategy C is the 6 Setups Engine: PDH, PDL, PDC)
+  const [selectedStrategy, setSelectedStrategy] = useState<'Strategy A' | 'Strategy B' | 'Strategy C'>('Strategy C');
   
   // Step 2: Multiple Selected Instruments (BTC, ETH, SOL, XRP)
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
@@ -174,27 +174,31 @@ export default function StrategiesPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {(['Strategy A', 'Strategy B', 'Strategy C'] as const).map((strat) => {
-            const isSelected = selectedStrategy === strat;
+          {([
+            { id: 'Strategy A', label: 'Strategy A', tag: 'Slot A (Pending)' },
+            { id: 'Strategy B', label: 'Strategy B', tag: 'Slot B (Pending)' },
+            { id: 'Strategy C', label: 'Strategy C', tag: '🔥 6 Setups Engine (Active)' },
+          ] as const).map((strat) => {
+            const isSelected = selectedStrategy === strat.id;
             return (
               <button
-                key={strat}
+                key={strat.id}
                 type="button"
-                onClick={() => setSelectedStrategy(strat)}
-                className={`p-4 rounded-xl text-center border font-bold text-sm transition-all flex flex-col items-center justify-center gap-2 ${
+                onClick={() => setSelectedStrategy(strat.id)}
+                className={`p-4 rounded-xl text-center border font-bold text-sm transition-all flex flex-col items-center justify-center gap-1.5 ${
                   isSelected
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500 shadow-lg shadow-emerald-500/20'
                     : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span>{strat}</span>
+                  <span>{strat.label}</span>
                   {isSelected && <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />}
                 </div>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full ${
                   isSelected ? 'bg-emerald-500/30 text-emerald-200' : 'bg-slate-900 text-slate-500'
                 }`}>
-                  {isSelected ? 'Selected' : 'Click to select'}
+                  {strat.tag}
                 </span>
               </button>
             );

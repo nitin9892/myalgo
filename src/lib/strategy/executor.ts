@@ -36,8 +36,8 @@ export interface SingleStrategyConfig {
 }
 
 export const DEFAULT_MASTER_STRATEGY: SingleStrategyConfig = {
-  id: 'master-5m-breakout',
-  name: '5m Previous Day Levels Breakout Engine',
+  id: 'strategy-c-6setups',
+  name: 'Strategy C',
   broker_name: 'DELTA',
   symbol: 'BTCUSD',
   timeframe: '5m',

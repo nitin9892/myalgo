@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const supabase = getAdminSupabase();
 
-    const strategyName = body.name || body.strategy || 'Strategy A';
+    const strategyName = body.name || body.strategy || 'Strategy C';
     const symbolsArray = Array.isArray(body.symbols)
       ? body.symbols
       : (body.symbol ? body.symbol.split(',').map((x: string) => x.trim()) : ['BTCUSD']);

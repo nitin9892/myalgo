@@ -71,7 +71,7 @@ export default function DashboardPage() {
   });
 
   const [activeStrategyInfo, setActiveStrategyInfo] = useState<{ name: string; symbols: string[] }>({
-    name: 'Strategy A',
+    name: 'Strategy C',
     symbols: ['BTC', 'ETH', 'SOL', 'XRP'],
   });
 
