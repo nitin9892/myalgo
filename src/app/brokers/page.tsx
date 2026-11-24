@@ -37,7 +37,7 @@ export default function BrokersPage() {
   const [testingBroker, setTestingBroker] = useState<string | null>(null);
   const [firingOrder, setFiringOrder] = useState<string | null>(null);
   const [showEditCredentials, setShowEditCredentials] = useState(false);
-  const [selectedCryptoSymbol, setSelectedCryptoSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'XRPUSD'>('BTCUSD');
+  const [selectedCryptoSymbol, setSelectedCryptoSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'XRPUSD'>('BTCUSD');
 
   const [testStatus, setTestStatus] = useState<Record<string, {
     success: boolean;
@@ -75,11 +75,11 @@ export default function BrokersPage() {
     {
       id: 'DELTA',
       name: 'Delta Exchange (Crypto Derivatives)',
-      title: 'Direct Crypto Futures with HMAC Signing (BTC, ETH, XRP)',
-      badge: 'BTC • ETH • XRP',
+      title: 'Direct Crypto Futures with HMAC Signing (BTC, ETH, SOL, XRP)',
+      badge: 'BTC • ETH • SOL • XRP',
       defaultSymbol: 'BTCUSD',
       defaultQty: 1,
-      cryptoSymbols: ['BTCUSD', 'ETHUSD', 'XRPUSD'],
+      cryptoSymbols: ['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'],
       docsUrl: 'https://docs.delta.exchange',
       fields: [
         { key: 'apiKey', label: 'Delta API Key', placeholder: 'delta_api_key_...' },
@@ -310,18 +310,18 @@ export default function BrokersPage() {
                     </span>
                   </div>
 
-                  {/* Quick Test Fire for BTC, ETH, XRP */}
+                  {/* Quick Test Fire for BTC, ETH, SOL, XRP */}
                   <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                     <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-                      One-Click Test Order (BTC • ETH • XRP)
+                      One-Click Test Order (BTC • ETH • SOL • XRP)
                     </span>
                     <div className="flex items-center gap-2">
-                      {(['BTCUSD', 'ETHUSD', 'XRPUSD'] as const).map((sym) => (
+                      {(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'] as const).map((sym) => (
                         <button
                           key={sym}
                           onClick={() => fireDirectOrder(broker, sym)}
                           disabled={firingOrder === broker.id}
-                          className={`flex-1 py-2 px-2 text-xs font-bold rounded-lg transition-all shadow ${
+                          className={`flex-1 py-2 px-1 text-xs font-bold rounded-lg transition-all shadow ${
                             isLiveMoney
                               ? 'bg-rose-500 hover:bg-rose-600 text-white'
                               : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'

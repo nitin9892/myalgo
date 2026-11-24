@@ -61,8 +61,8 @@ export function calculateDynamicPositionSize(
       // Cash equities (min 1 share)
       finalQuantity = Math.max(1, rawQuantity);
     }
-  } else if (broker === 'DELTA' || sym.includes('BTC') || sym.includes('ETH') || sym.includes('XRP')) {
-    // Crypto contracts: min 1 contract (BTC, ETH, XRP)
+  } else if (broker === 'DELTA' || sym.includes('BTC') || sym.includes('ETH') || sym.includes('SOL') || sym.includes('XRP')) {
+    // Crypto contracts: min 1 contract (BTC, ETH, SOL, XRP)
     finalQuantity = Math.max(1, rawQuantity);
   } else if (broker === 'METATRADER') {
     // Forex standard lot (0.01 micro lot = 1,000 units)

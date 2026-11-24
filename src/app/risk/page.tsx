@@ -33,8 +33,8 @@ export default function RiskManagementPage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // Crypto Simulator State (BTC, ETH, XRP)
-  const [simSymbol, setSimSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'XRPUSD'>('BTCUSD');
+  // Crypto Simulator State (BTC, ETH, SOL, XRP)
+  const [simSymbol, setSimSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'XRPUSD'>('BTCUSD');
   const [simSlPoints, setSimSlPoints] = useState<number>(150);
 
   useEffect(() => {
@@ -355,7 +355,7 @@ export default function RiskManagementPage() {
             <Coins className="w-5 h-5 text-amber-400" />
             Crypto Position Sizing Simulator
           </h2>
-          <span className="text-xs text-slate-400">Supported: BTC • ETH • XRP</span>
+          <span className="text-xs text-slate-400">Supported: BTC • ETH • SOL • XRP</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
@@ -368,6 +368,7 @@ export default function RiskManagementPage() {
             >
               <option value="BTCUSD">BTCUSD (Bitcoin)</option>
               <option value="ETHUSD">ETHUSD (Ethereum)</option>
+              <option value="SOLUSD">SOLUSD (Solana)</option>
               <option value="XRPUSD">XRPUSD (Ripple)</option>
             </select>
           </div>
