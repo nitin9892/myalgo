@@ -27,7 +27,7 @@ export class DeltaAdapter implements IBrokerAdapter {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'User-Agent': 'MyAlgo-Trading-Terminal/1.0',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MyAlgo/1.0',
       'api-key': this.apiKey,
       'signature': signature,
       'timestamp': timestamp,
@@ -39,15 +39,14 @@ export class DeltaAdapter implements IBrokerAdapter {
       return { success: false, message: 'Please enter both Delta API Key and API Secret' };
     }
 
-    // Try both regional base URLs (India and Global) to auto-detect user's account region
+    // Try both regional base URLs (India and Global)
     const urlsToTry = this.isIndia
       ? ['https://api.india.delta.exchange', 'https://api.delta.exchange']
       : ['https://api.delta.exchange', 'https://api.india.delta.exchange'];
 
-    // Try standard authenticated endpoints: /v2/positions or /v2/wallet/balances
     const endpoints = ['/v2/positions', '/v2/wallet/balances'];
-
-    let lastError = 'Delta Auth Failed: HTTP 401';
+    let lastErrorCode = '';
+    let lastErrorDetail = '';
 
     for (const url of urlsToTry) {
       for (const path of endpoints) {
@@ -63,32 +62,50 @@ export class DeltaAdapter implements IBrokerAdapter {
             this.baseUrl = url;
             return {
               success: true,
-              message: `Connected successfully to ${regionName}! Authentication verified.`,
+              message: `✅ Connected successfully to ${regionName}! Live account verified.`,
             };
           }
 
-          // Parse detailed error message from Delta
+          // Parse Delta error body: {"error":{"code":"invalid_api_key"},"success":false}
           try {
             const data = await res.json();
-            if (data.error?.message) {
-              lastError = `${data.error.message} (${data.error?.code || res.status})`;
-            } else if (data.message) {
-              lastError = `${data.message} (${res.status})`;
-            } else {
-              lastError = `HTTP ${res.status}: ${res.statusText || 'Unauthorized'}`;
-            }
+            const code = data.error?.code || data.code || '';
+            const msg = data.error?.message || data.message || '';
+            lastErrorCode = code;
+            lastErrorDetail = msg || code;
+
+            // If we found a specific non-404 error code from Delta, break inner loop
+            if (code) break;
           } catch {
-            lastError = `HTTP ${res.status}: Unauthorized`;
+            lastErrorDetail = `HTTP ${res.status}`;
           }
         } catch (err: any) {
-          lastError = err.message || 'Connection network error';
+          lastErrorDetail = err.message || 'Network connection failed';
         }
       }
     }
 
+    // Construct human-friendly explanation for the exact Delta error code
+    let diagnosticAdvice = `Delta Error (${lastErrorCode || lastErrorDetail})`;
+
+    if (lastErrorCode === 'invalid_api_key') {
+      diagnosticAdvice = `Invalid API Key (invalid_api_key). Delta Exchange does not recognize this key. Please check:
+1. Is your account on Delta India (india.delta.exchange) or Delta Global (delta.exchange)? Switch the region button above accordingly.
+2. Did you create this key on Delta Testnet (demo) instead of Live Delta? Live keys are required.
+3. Check for any missing or truncated characters.`;
+    } else if (lastErrorCode === 'signature_mismatch' || lastErrorCode === 'invalid_signature') {
+      diagnosticAdvice = `Signature Mismatch. Your API Secret does not match the API Key. Please re-copy the Secret from Delta.`;
+    } else if (lastErrorCode === 'expired_signature') {
+      diagnosticAdvice = `Timestamp Expired. Delta requires server clock to match within 5 seconds. Retrying...`;
+    } else if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist')) {
+      diagnosticAdvice = `IP Restricted. The API key has an IP whitelist enabled in Delta. Please set IP Restriction to "None" in Delta API Settings.`;
+    } else if (lastErrorCode.includes('permission') || lastErrorCode.includes('scope')) {
+      diagnosticAdvice = `Missing Permissions. The API key must have "Read" and "Trade" permissions checked in Delta settings.`;
+    }
+
     return {
       success: false,
-      message: `Delta Auth Failed: ${lastError}. Make sure API Key has "Read & Trade" permissions and belongs to India or Global Delta Exchange.`,
+      message: diagnosticAdvice,
     };
   }
 
@@ -139,7 +156,7 @@ export class DeltaAdapter implements IBrokerAdapter {
       const payloadObj: any = {
         product_symbol: order.symbol.toUpperCase(),
         size: Math.max(1, Math.round(order.quantity)),
-        side: order.side.toLowerCase(), // buy or sell
+        side: order.side.toLowerCase(),
         order_type: order.orderType === 'LIMIT' ? 'limit_order' : 'market_order',
       };
       if (order.orderType === 'LIMIT' && order.price) {
@@ -175,7 +192,7 @@ export class DeltaAdapter implements IBrokerAdapter {
         price: 0,
         quantity: order.quantity,
         status: 'REJECTED',
-        message: data.error?.message || data.error?.context || 'Delta order rejected',
+        message: data.error?.message || data.error?.code || 'Delta order rejected',
       };
     } catch (err: any) {
       return {
