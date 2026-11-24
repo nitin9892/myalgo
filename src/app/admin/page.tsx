@@ -178,18 +178,18 @@ export default function AdminPage() {
             </div>
             <h1 className="text-2xl font-bold text-white">Master Admin Portal</h1>
             <p className="text-xs text-slate-400">
-              Only authorized Gmail administrators (<code className="text-cyan-400">nitinyadavtss@gmail.com</code> / <code className="text-cyan-400">letslearn9892@gmail.com</code>) have access.
+              Restricted portal. Authorized personnel and verified administrators only.
             </p>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-300">Admin Gmail</label>
+              <label className="text-xs font-semibold text-slate-300">Admin Email</label>
               <input
                 type="email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="nitinyadavtss@gmail.com"
+                placeholder="Enter authorized admin email"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-500 focus:outline-none"
                 required
               />
@@ -205,7 +205,6 @@ export default function AdminPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:border-cyan-500 focus:outline-none"
                 required
               />
-              <p className="text-[11px] text-slate-500">Default passcode: <code className="text-slate-400">Admin@9892</code></p>
             </div>
 
             {loginError && (

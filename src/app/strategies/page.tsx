@@ -1,397 +1,387 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Cpu, 
   Power, 
   ShieldAlert, 
   Settings, 
-  Plus, 
   Check, 
   Clock, 
   TrendingUp, 
   Layers, 
   SlidersHorizontal,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Save,
+  Zap,
+  ArrowUpRight,
+  ArrowDownRight,
+  Info
 } from 'lucide-react';
 
-interface StrategyItem {
-  id: string;
-  name: string;
-  broker: 'DHAN' | 'DELTA' | 'METATRADER';
-  symbol: string;
-  timeframe: string;
-  type: string;
-  isActive: boolean;
-  paperTrading: boolean;
-  capital: number;
-  stopLoss: number;
-  takeProfit: number;
-  description: string;
-  isDetailed?: boolean;
-  params?: {
-    sl_candle_mode: 'signal_candle' | 'prev_candle';
-    max_trades_per_day: number;
-    lot_size: number;
-    trail_step_points: number;
-    trail_amount_points: number;
-    session_start: string;
-    no_trade_start: string;
-    no_trade_end: string;
-    square_off_time: string;
-    prev_high?: number;
-    prev_low?: number;
-    prev_close?: number;
-  };
-}
-
 export default function StrategiesPage() {
-  const [strategies, setStrategies] = useState<StrategyItem[]>([
-    {
-      id: 'strat-pdb-1',
-      name: 'Nifty Prev Day Levels Breakout (5m Intraday)',
-      broker: 'DHAN',
-      symbol: 'NIFTY',
-      timeframe: '5m',
-      type: 'PREV_DAY_BREAKOUT',
-      isActive: true,
-      paperTrading: true,
-      capital: 50000,
-      stopLoss: 0,
-      takeProfit: 0,
-      description: 'Breaks & closes above/below Prev Day High, Low or Close. 1:3 RR target with 10pt step trailing and 15:30 auto square-off.',
-      isDetailed: true,
-      params: {
-        sl_candle_mode: 'signal_candle',
-        max_trades_per_day: 3,
-        lot_size: 50,
-        trail_step_points: 10,
-        trail_amount_points: 3,
-        session_start: '09:15',
-        no_trade_start: '11:00',
-        no_trade_end: '13:00',
-        square_off_time: '15:30',
-        prev_high: 24250,
-        prev_low: 23980,
-        prev_close: 24120,
-      },
-    },
-    {
-      id: 'strat-delta-1',
-      name: 'BTC Delta Supertrend Scalper',
-      broker: 'DELTA',
-      symbol: 'BTCUSD',
-      timeframe: '1m',
-      type: 'SUPERTREND',
-      isActive: true,
-      paperTrading: true,
-      capital: 25000,
-      stopLoss: 0.3,
-      takeProfit: 0.8,
-      description: 'Scalps Bitcoin futures on Delta Exchange using ATR (10, 3) Supertrend band flips.',
-    },
-    {
-      id: 'strat-mt5-1',
-      name: 'EURUSD Prev Day Breakout (5m)',
-      broker: 'METATRADER',
-      symbol: 'EURUSD',
-      timeframe: '5m',
-      type: 'PREV_DAY_BREAKOUT',
-      isActive: false,
-      paperTrading: true,
-      capital: 10000,
-      stopLoss: 0,
-      takeProfit: 0,
-      description: 'Breakout of previous day high/low on EURUSD with 1:3 target and trailing SL sent to MT5 bridge.',
-      isDetailed: true,
-      params: {
-        sl_candle_mode: 'signal_candle',
-        max_trades_per_day: 2,
-        lot_size: 0.01,
-        trail_step_points: 10,
-        trail_amount_points: 3,
-        session_start: '09:15',
-        no_trade_start: '11:00',
-        no_trade_end: '13:00',
-        square_off_time: '15:30',
-      },
-    },
-  ]);
+  const [isActive, setIsActive] = useState(true);
+  const [paperTrading, setPaperTrading] = useState(true);
+  const [broker, setBroker] = useState<'DHAN' | 'DELTA' | 'METATRADER'>('DHAN');
+  const [symbol, setSymbol] = useState('NIFTY');
+  
+  // Strategy Parameters
+  const [slCandleMode, setSlCandleMode] = useState<'signal_candle' | 'prev_candle'>('signal_candle');
+  const [maxTradesPerDay, setMaxTradesPerDay] = useState(3);
+  const [lotSize, setLotSize] = useState(50);
+  const [trailStepPoints, setTrailStepPoints] = useState(10);
+  const [trailAmountPoints, setTrailAmountPoints] = useState(3);
+  const [sessionStart, setSessionStart] = useState('09:15');
+  const [noTradeStart, setNoTradeStart] = useState('11:00');
+  const [noTradeEnd, setNoTradeEnd] = useState('13:00');
+  const [squareOffTime, setSquareOffTime] = useState('15:30');
+  const [prevHigh, setPrevHigh] = useState<number>(24250);
+  const [prevLow, setPrevLow] = useState<number>(23980);
+  const [prevClose, setPrevClose] = useState<number>(24120);
 
-  const [expandedId, setExpandedId] = useState<string | null>('strat-pdb-1');
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const toggleActive = (id: string) => {
-    setStrategies((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
-    );
+  useEffect(() => {
+    fetchStrategySettings();
+  }, []);
+
+  const fetchStrategySettings = async () => {
+    try {
+      const res = await fetch('/api/strategies');
+      const data = await res.json();
+      if (data.strategy) {
+        const s = data.strategy;
+        setIsActive(s.is_active ?? true);
+        setPaperTrading(s.paper_trading ?? true);
+        if (s.broker_name) setBroker(s.broker_name);
+        if (s.symbol) setSymbol(s.symbol);
+
+        const p = s.parameters || s.params || {};
+        if (p.sl_candle_mode) setSlCandleMode(p.sl_candle_mode);
+        if (p.max_trades_per_day) setMaxTradesPerDay(p.max_trades_per_day);
+        if (p.lot_size) setLotSize(p.lot_size);
+        if (p.trail_step_points) setTrailStepPoints(p.trail_step_points);
+        if (p.trail_amount_points) setTrailAmountPoints(p.trail_amount_points);
+        if (p.session_start) setSessionStart(p.session_start);
+        if (p.no_trade_start) setNoTradeStart(p.no_trade_start);
+        if (p.no_trade_end) setNoTradeEnd(p.no_trade_end);
+        if (p.square_off_time) setSquareOffTime(p.square_off_time);
+        if (p.prev_high) setPrevHigh(p.prev_high);
+        if (p.prev_low) setPrevLow(p.prev_low);
+        if (p.prev_close) setPrevClose(p.prev_close);
+      }
+    } catch (err) {
+      console.error('Failed to load strategy:', err);
+    }
   };
 
-  const togglePaper = (id: string) => {
-    setStrategies((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, paperTrading: !s.paperTrading } : s))
-    );
-  };
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveSuccess(false);
+    try {
+      const payload = {
+        id: 'master-5m-breakout',
+        name: '5m Previous Day Levels Breakout Engine',
+        broker_name: broker,
+        symbol: symbol.toUpperCase(),
+        timeframe: '5m',
+        is_active: isActive,
+        paper_trading: paperTrading,
+        params: {
+          sl_candle_mode: slCandleMode,
+          max_trades_per_day: Number(maxTradesPerDay),
+          lot_size: Number(lotSize),
+          trail_step_points: Number(trailStepPoints),
+          trail_amount_points: Number(trailAmountPoints),
+          session_start: sessionStart,
+          no_trade_start: noTradeStart,
+          no_trade_end: noTradeEnd,
+          square_off_time: squareOffTime,
+          prev_high: Number(prevHigh),
+          prev_low: Number(prevLow),
+          prev_close: Number(prevClose),
+        },
+      };
 
-  const updateParam = (id: string, paramKey: string, value: any) => {
-    setStrategies((prev) =>
-      prev.map((s) => {
-        if (s.id === id && s.params) {
-          return {
-            ...s,
-            params: { ...s.params, [paramKey]: value },
-          };
-        }
-        return s;
-      })
-    );
+      const res = await fetch('/api/strategies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
+    } catch (err: any) {
+      alert(`Save failed: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-4xl">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Cpu className="w-6 h-6 text-emerald-400" />
-            Strategy Management Engine
+            Master Strategy Engine
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold">
+              Single Core Active
+            </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Configure intraday breakout rules, time windows, trailing stop loss and multi-broker automated execution.
+            5-Minute Previous Day High/Low/Close Breakout with 1:3 RR and Step Trailing.
           </p>
+        </div>
+
+        {/* Master Power Toggle */}
+        <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-xl border border-slate-800">
+          <span className="text-xs font-semibold text-slate-300">Strategy Status:</span>
+          <button
+            onClick={() => setIsActive(!isActive)}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              isActive
+                ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Power className="w-3.5 h-3.5" />
+            {isActive ? '🟢 RUNNING' : '⚪ PAUSED'}
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        {strategies.map((strat) => {
-          const isExpanded = expandedId === strat.id;
-          const p = strat.params;
+      {/* Primary Configuration Card */}
+      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-400" />
+              5m Previous Day Breakout Setup
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Automated signal detection on 5-minute candle close beyond PDH, PDL, or PDC.
+            </p>
+          </div>
 
-          return (
-            <div
-              key={strat.id}
-              className={`rounded-2xl border transition-all overflow-hidden ${
-                strat.isActive
-                  ? 'bg-slate-900 border-slate-700 shadow-xl shadow-emerald-950/20'
-                  : 'bg-slate-900/50 border-slate-800 opacity-80'
+          {/* Mode Switcher */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPaperTrading(true)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                paperTrading
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                  : 'bg-slate-800 text-slate-400 border-slate-700/60'
               }`}
             >
-              {/* Header Box */}
-              <div className="p-6">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <h3 className="text-lg font-bold text-white">{strat.name}</h3>
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                        {strat.broker}
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-cyan-950/60 text-cyan-400 border border-cyan-800">
-                        {strat.symbol} ({strat.timeframe})
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-indigo-950/60 text-indigo-400 border border-indigo-800">
-                        {strat.type}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-2">{strat.description}</p>
-                  </div>
+              🟢 Paper Trading
+            </button>
+            <button
+              onClick={() => setPaperTrading(false)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                !paperTrading
+                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                  : 'bg-slate-800 text-slate-400 border-slate-700/60'
+              }`}
+            >
+              🔴 Live Money
+            </button>
+          </div>
+        </div>
 
-                  {/* Top Action Toggles */}
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => togglePaper(strat.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                        strat.paperTrading
-                          ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                          : 'bg-rose-500/10 text-rose-300 border-rose-500/30'
-                      }`}
-                    >
-                      {strat.paperTrading ? 'Paper Trading' : 'REAL MONEY LIVE'}
-                    </button>
+        {/* Target Broker & Symbol Selection */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-300">Target Execution Broker</label>
+            <select
+              value={broker}
+              onChange={(e) => setBroker(e.target.value as any)}
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-emerald-500"
+            >
+              <option value="DHAN">DhanHQ (Indian Equities & F&O - NIFTY/BANKNIFTY)</option>
+              <option value="DELTA">Delta Exchange (Crypto Futures - BTCUSD/ETHUSD)</option>
+              <option value="METATRADER">MetaTrader 5 (Forex IPC Bridge - EURUSD/XAUUSD)</option>
+            </select>
+          </div>
 
-                    <button
-                      onClick={() => toggleActive(strat.id)}
-                      className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
-                        strat.isActive
-                          ? 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
-                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
-                      }`}
-                    >
-                      <Power className="w-3.5 h-3.5" />
-                      {strat.isActive ? 'ACTIVE' : 'PAUSED'}
-                    </button>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-300">Trading Instrument / Symbol</label>
+            <input
+              type="text"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+              placeholder="e.g. NIFTY, BTCUSD, EURUSD"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+        </div>
 
-                    {strat.isDetailed && (
-                      <button
-                        onClick={() => setExpandedId(isExpanded ? null : strat.id)}
-                        className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white border border-slate-700"
-                        title="Configure Strategy Rules"
-                      >
-                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      </button>
-                    )}
-                  </div>
-                </div>
+        {/* Core Strategy Rules Explanation Banner */}
+        <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2 text-xs text-slate-300">
+          <span className="font-semibold text-emerald-400 flex items-center gap-1.5">
+            <Info className="w-4 h-4 text-emerald-400" /> Decoded Execution Logic:
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400 font-mono">
+            <div>• <span className="text-emerald-400">LONG (BUY):</span> 5m GREEN candle breaks & closes beyond level &rarr; Entry at High</div>
+            <div>• <span className="text-rose-400">SHORT (SELL):</span> 5m RED candle breaks & closes beyond level &rarr; Entry at Low</div>
+            <div>• <span className="text-cyan-400">Target (TP):</span> Initial SL Points × 3 (1:3 Risk to Reward)</div>
+            <div>• <span className="text-amber-400">Step Trailing:</span> +3 pts SL & TP for every +10 pts favorable move</div>
+          </div>
+        </div>
 
-                {/* Session & Strategy Rules Highlights */}
-                {strat.type === 'PREV_DAY_BREAKOUT' && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800 font-mono text-xs">
-                    <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5 font-sans">Target Ratio</span>
-                      <span className="text-emerald-400 font-bold">1 : 3 Risk-Reward</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5 font-sans">Step Trailing</span>
-                      <span className="text-cyan-400 font-bold">+{p?.trail_amount_points}pts / +{p?.trail_step_points}pts</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5 font-sans">No Entry Window</span>
-                      <span className="text-amber-400 font-bold">{p?.no_trade_start} - {p?.no_trade_end}</span>
-                    </div>
-                    <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800">
-                      <span className="text-slate-500 block mb-0.5 font-sans">Auto Square-Off</span>
-                      <span className="text-rose-400 font-bold">{p?.square_off_time} IST</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Collapsible Tuning Panel for Prev Day Breakout */}
-              {isExpanded && strat.type === 'PREV_DAY_BREAKOUT' && p && (
-                <div className="bg-slate-950/80 p-6 border-t border-slate-800 space-y-5 text-xs">
-                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-                    <h4 className="font-bold text-slate-200 flex items-center gap-2">
-                      <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
-                      Fine-Tune Breakout & Trailing Parameters
-                    </h4>
-                    <span className="text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      Auto-Saved
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {/* SL Candle Mode */}
-                    <div className="space-y-1.5">
-                      <label className="text-slate-300 font-semibold block">Stop Loss Candle Mode</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => updateParam(strat.id, 'sl_candle_mode', 'signal_candle')}
-                          className={`py-2 px-3 rounded-xl border font-semibold text-center transition-all ${
-                            p.sl_candle_mode === 'signal_candle'
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
-                              : 'bg-slate-900 text-slate-400 border-slate-800'
-                          }`}
-                        >
-                          Signal Candle
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateParam(strat.id, 'sl_candle_mode', 'prev_candle')}
-                          className={`py-2 px-3 rounded-xl border font-semibold text-center transition-all ${
-                            p.sl_candle_mode === 'prev_candle'
-                              ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
-                              : 'bg-slate-900 text-slate-400 border-slate-800'
-                          }`}
-                        >
-                          Prev Candle
-                        </button>
-                      </div>
-                      <span className="text-[10px] text-slate-500 block">
-                        {p.sl_candle_mode === 'signal_candle' ? 'SL at breaking candle extreme' : 'SL at prior candle extreme'}
-                      </span>
-                    </div>
-
-                    {/* Step Trailing Settings */}
-                    <div className="space-y-1.5">
-                      <label className="text-slate-300 font-semibold block">Trailing Step & Shift</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <input
-                            type="number"
-                            value={p.trail_step_points}
-                            onChange={(e) => updateParam(strat.id, 'trail_step_points', Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                          />
-                          <span className="text-[10px] text-slate-500">Step (Pts)</span>
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            value={p.trail_amount_points}
-                            onChange={(e) => updateParam(strat.id, 'trail_amount_points', Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                          />
-                          <span className="text-[10px] text-slate-500">Trail By (Pts)</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Quantity & Max Trades */}
-                    <div className="space-y-1.5">
-                      <label className="text-slate-300 font-semibold block">Lot Size & Daily Limit</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <input
-                            type="number"
-                            value={p.lot_size}
-                            onChange={(e) => updateParam(strat.id, 'lot_size', Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                          />
-                          <span className="text-[10px] text-slate-500">Position Qty</span>
-                        </div>
-                        <div>
-                          <input
-                            type="number"
-                            value={p.max_trades_per_day}
-                            onChange={(e) => updateParam(strat.id, 'max_trades_per_day', Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                          />
-                          <span className="text-[10px] text-slate-500">Max Trades/Day</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Key Levels (Prev High, Low, Close) */}
-                    <div className="space-y-1.5 sm:col-span-2 lg:col-span-3 pt-2 border-t border-slate-800/80">
-                      <label className="text-slate-300 font-semibold block">Previous Day Key Levels (Reference)</label>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <span className="text-[11px] text-slate-400 block mb-1">Prev High (PDH)</span>
-                          <input
-                            type="number"
-                            value={p.prev_high || ''}
-                            onChange={(e) => updateParam(strat.id, 'prev_high', Number(e.target.value))}
-                            placeholder="Auto or Manual"
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-emerald-400 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[11px] text-slate-400 block mb-1">Prev Low (PDL)</span>
-                          <input
-                            type="number"
-                            value={p.prev_low || ''}
-                            onChange={(e) => updateParam(strat.id, 'prev_low', Number(e.target.value))}
-                            placeholder="Auto or Manual"
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-rose-400 font-mono"
-                          />
-                        </div>
-                        <div>
-                          <span className="text-[11px] text-slate-400 block mb-1">Prev Close (PDC)</span>
-                          <input
-                            type="number"
-                            value={p.prev_close || ''}
-                            onChange={(e) => updateParam(strat.id, 'prev_close', Number(e.target.value))}
-                            placeholder="Auto or Manual"
-                            className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-cyan-400 font-mono"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+        {/* Stop Loss & Trailing Configuration */}
+        <div className="space-y-3 pt-2">
+          <h3 className="text-xs font-bold text-slate-300 tracking-wider uppercase">Stop-Loss & Trailing Settings</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Stop-Loss Candle Mode</label>
+              <select
+                value={slCandleMode}
+                onChange={(e) => setSlCandleMode(e.target.value as any)}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="signal_candle">Signal Candle (Breakout Candle)</option>
+                <option value="prev_candle">Previous Candle (Prior to Breakout)</option>
+              </select>
             </div>
-          );
-        })}
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Trail Step Points (+Move)</label>
+              <input
+                type="number"
+                value={trailStepPoints}
+                onChange={(e) => setTrailStepPoints(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-slate-500">Milestone step (Default: 10 pts)</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Trail Amount Points (+Lock)</label>
+              <input
+                type="number"
+                value={trailAmountPoints}
+                onChange={(e) => setTrailAmountPoints(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-slate-500">Trailed points (Default: 3 pts)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Session & Time Windows */}
+        <div className="space-y-3 pt-2">
+          <h3 className="text-xs font-bold text-slate-300 tracking-wider uppercase">Trading Time Windows</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Session Start</label>
+              <input
+                type="text"
+                value={sessionStart}
+                onChange={(e) => setSessionStart(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono text-center focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[10px] text-slate-500">No entry before</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">No-Trade Start</label>
+              <input
+                type="text"
+                value={noTradeStart}
+                onChange={(e) => setNoTradeStart(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-amber-400 font-mono text-center focus:outline-none focus:border-amber-500"
+              />
+              <span className="text-[10px] text-slate-500">Block entry</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">No-Trade End</label>
+              <input
+                type="text"
+                value={noTradeEnd}
+                onChange={(e) => setNoTradeEnd(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-amber-400 font-mono text-center focus:outline-none focus:border-amber-500"
+              />
+              <span className="text-[10px] text-slate-500">Resume entry</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Force Square-Off</label>
+              <input
+                type="text"
+                value={squareOffTime}
+                onChange={(e) => setSquareOffTime(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-rose-400 font-mono text-center focus:outline-none focus:border-rose-500"
+              />
+              <span className="text-[10px] text-slate-500">Auto exit all</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Previous Day Levels (PDH, PDL, PDC) */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-300 tracking-wider uppercase">Key Levels (Previous Day OHLC)</h3>
+            <span className="text-[11px] text-slate-500">Auto-detected from candles or manual override</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Prev Day High (PDH)</label>
+              <input
+                type="number"
+                value={prevHigh}
+                onChange={(e) => setPrevHigh(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Prev Day Low (PDL)</label>
+              <input
+                type="number"
+                value={prevLow}
+                onChange={(e) => setPrevLow(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-rose-400 font-mono focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400">Prev Day Close (PDC)</label>
+              <input
+                type="number"
+                value={prevClose}
+                onChange={(e) => setPrevClose(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-cyan-400 font-mono focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+          <div>
+            {saveSuccess && (
+              <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5">
+                <Check className="w-4 h-4" /> Strategy Settings Saved Successfully!
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Saving...' : 'Save Strategy Configuration'}
+          </button>
+        </div>
       </div>
     </div>
   );

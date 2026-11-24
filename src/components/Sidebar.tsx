@@ -16,7 +16,7 @@ import {
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Strategies', href: '/strategies', icon: Cpu },
+  { name: 'Strategy Engine', href: '/strategies', icon: Cpu },
   { name: 'Risk & Capital', href: '/risk', icon: ShieldAlert },
   { name: 'Brokers & APIs', href: '/brokers', icon: Wallet },
   { name: 'Logs & Audit', href: '/logs', icon: Terminal },

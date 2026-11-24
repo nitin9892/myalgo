@@ -41,9 +41,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Sidebar Component */}
-        <Sidebar 
-          isOpen={mobileMenuOpen} 
-          onClose={() => setMobileMenuOpen(false)} 
+        <Sidebar
+          isOpen={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
         />
 
         {/* Main Content Area */}

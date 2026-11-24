@@ -271,19 +271,20 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Card 2: Active Strategies */}
+        {/* Card 2: Master Strategy */}
         <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Active Strategies</span>
-            <Zap className="w-4 h-4 text-cyan-400" />
+            <span>Master Strategy</span>
+            <Zap className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white font-mono">
-              {stats.activeStrategies} <span className="text-sm text-slate-400 font-normal">/ {stats.totalStrategies}</span>
+            <span className="text-base font-bold text-white font-mono flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              5m Prev Day Breakout
             </span>
           </div>
-          <Link href="/strategies" className="text-xs text-cyan-400 hover:underline mt-2 inline-block font-semibold">
-            Manage strategies &rarr;
+          <Link href="/strategies" className="text-xs text-emerald-400 hover:underline mt-2 inline-block font-semibold">
+            Tune 1:3 RR & Trailing &rarr;
           </Link>
         </div>
 
