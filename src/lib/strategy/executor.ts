@@ -2,6 +2,11 @@ import { getAdminSupabase } from '../supabase';
 import { getBrokerAdapter } from '../brokers';
 import { calculateEMA, calculateRSI, calculateSupertrend } from './indicators';
 import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrategyParams } from './prev_day_breakout';
+import { 
+  getRiskConfiguration, 
+  evaluateDailyLossAndKillSwitch, 
+  calculateDynamicPositionSize 
+} from '../risk/engine';
 import { BrokerType, OrderRequest } from '../brokers/types';
 
 export interface StrategyRecord {
@@ -25,6 +30,21 @@ export async function runTradingEngineCycle() {
   const logs: string[] = [];
 
   try {
+    // ------------------------------------------------------------------------
+    // 0. RISK ENGINE & KILL SWITCH EVALUATION
+    // ------------------------------------------------------------------------
+    const riskConfig = await getRiskConfiguration();
+    const riskEval = await evaluateDailyLossAndKillSwitch(
+      riskConfig.walletBalance,
+      riskConfig.maxDailyLossPct
+    );
+
+    if (riskConfig.killSwitchActive || riskEval.killSwitchTriggered) {
+      const reason = riskConfig.killSwitchReason || `Daily Loss Limit (-${riskConfig.maxDailyLossPct}%) breached`;
+      logs.push(`🚨 KILL SWITCH ACTIVE: Trading halted for today. (${reason})`);
+      return { success: false, killSwitchActive: true, count: 0, logs };
+    }
+
     // 1. Fetch active strategies
     const { data: strategies, error } = await supabase
       .from('strategies')
@@ -50,7 +70,7 @@ export async function runTradingEngineCycle() {
         const closes = candles.map((c) => c.close);
         const currentPrice = closes[closes.length - 1];
 
-        // Check if an open trade already exists for this strategy
+        // Check open trade for this strategy
         const { data: openTrades } = await supabase
           .from('trades')
           .select('*')
@@ -60,16 +80,14 @@ export async function runTradingEngineCycle() {
         const activeTrade = openTrades && openTrades.length > 0 ? openTrades[0] : null;
 
         // ====================================================================
-        // SPECIALIZED STRATEGY: PREVIOUS DAY LEVELS BREAKOUT & STEP TRAILING
+        // STRATEGY: PREVIOUS DAY LEVELS BREAKOUT & 1:3 STEP TRAILING
         // ====================================================================
         if (strat.strategy_type === 'PREV_DAY_BREAKOUT') {
-          // Calculate or extract previous day levels
           const p = strat.parameters || {};
           let prevHigh = Number(p.prev_high);
           let prevLow = Number(p.prev_low);
           let prevClose = Number(p.prev_close);
 
-          // If levels not explicitly provided, estimate from candle range
           if (!prevHigh || !prevLow || !prevClose) {
             const highs = candles.map((c) => c.high);
             const lows = candles.map((c) => c.low);
@@ -91,7 +109,6 @@ export async function runTradingEngineCycle() {
             squareOffTime: p.square_off_time || '15:30',
           };
 
-          // Active Position State if already in a trade
           let activePosState: ActivePositionState | null = null;
           if (activeTrade) {
             activePosState = {
@@ -110,7 +127,6 @@ export async function runTradingEngineCycle() {
             };
           }
 
-          // Evaluate Strategy
           const evalRes = evaluatePrevDayBreakout(
             candles,
             levels,
@@ -119,19 +135,17 @@ export async function runTradingEngineCycle() {
             currentPrice
           );
 
-          // 1. Handle Active Trade Exits (SL, Target, or 15:30 Square-Off)
+          // 1. Exits (SL, Target, or 15:30 Force Square-Off)
           if (activeTrade && evalRes.exitSignal?.shouldExit) {
             const exitReason = evalRes.exitSignal.reason || 'MANUAL_EXIT';
             const exitPrice = evalRes.exitSignal.exitPrice || currentPrice;
             const entryPrice = Number(activeTrade.entry_price);
             const qty = Number(activeTrade.quantity);
 
-            // Compute P&L
             const isBuy = activeTrade.side === 'BUY';
             const pnl = isBuy ? (exitPrice - entryPrice) * qty : (entryPrice - exitPrice) * qty;
             const pnlPct = (pnl / (entryPrice * qty)) * 100;
 
-            // Place Exit Order with Broker
             const exitSide = isBuy ? 'SELL' : 'BUY';
             await adapter.placeOrder({
               symbol: strat.symbol,
@@ -141,7 +155,6 @@ export async function runTradingEngineCycle() {
               paperTrade: strat.paper_trading,
             });
 
-            // Update Trade in Supabase
             await supabase
               .from('trades')
               .update({
@@ -165,7 +178,7 @@ export async function runTradingEngineCycle() {
             continue;
           }
 
-          // 2. Handle Trailing SL & Target Update
+          // 2. Trailing Updates
           if (activeTrade && evalRes.trailingUpdate) {
             const { newSl, newTarget, milestone, pointsTrailed } = evalRes.trailingUpdate;
 
@@ -189,18 +202,27 @@ export async function runTradingEngineCycle() {
             continue;
           }
 
-          // 3. Handle Fresh Entry Trigger
+          // 3. Dynamic Position Sizing & Entry Trigger
           if (!activeTrade && evalRes.signal) {
             const signal = evalRes.signal;
             const entryPrice = evalRes.entryPrice || currentPrice;
             const stopLoss = evalRes.stopLoss || 0;
             const takeProfit = evalRes.target || 0;
-            const quantity = strategyParams.lotSize || 50;
+            const slPoints = evalRes.slPoints || Math.abs(entryPrice - stopLoss);
+
+            // DYNAMIC LOT SIZING VIA RISK ENGINE (% RISK PER TRADE)
+            const sizing = calculateDynamicPositionSize(
+              riskConfig.walletBalance,
+              riskConfig.perTradeRiskPct,
+              slPoints,
+              strat.symbol,
+              strat.broker_name
+            );
 
             const orderResult = await adapter.placeOrder({
               symbol: strat.symbol,
               side: signal,
-              quantity,
+              quantity: sizing.quantity,
               orderType: 'MARKET',
               price: entryPrice,
               stopLoss,
@@ -214,24 +236,24 @@ export async function runTradingEngineCycle() {
                 broker_name: strat.broker_name,
                 symbol: strat.symbol,
                 side: signal,
-                quantity,
+                quantity: sizing.quantity,
                 entry_price: entryPrice,
                 stop_loss: stopLoss,
                 take_profit: takeProfit,
                 status: 'OPEN',
                 paper_trade: strat.paper_trading,
                 broker_order_id: orderResult.orderId,
-                notes: `${evalRes.signalReason} | 1:3 Target: ${takeProfit} | SL: ${stopLoss}`,
+                notes: `${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} (Risk: ₹${sizing.effectiveRisk})`,
               });
 
               await supabase.from('system_logs').insert({
                 level: 'TRADE_SIGNAL',
                 source: `ENGINE_${strat.broker_name}`,
-                message: `[${strat.name}] ENTRY TRIGGERED: ${signal} ${quantity} ${strat.symbol} @ ${entryPrice} (SL: ${stopLoss}, 1:3 TP: ${takeProfit})`,
-                metadata: { orderResult, evalRes },
+                message: `[${strat.name}] ENTRY TRIGGERED: ${signal} ${sizing.quantity} ${strat.symbol} @ ${entryPrice} (SL: ${stopLoss}, 1:3 TP: ${takeProfit}) | Risk: ₹${sizing.effectiveRisk}`,
+                metadata: { orderResult, sizing, evalRes },
               });
 
-              logs.push(`SUCCESS: [${strat.name}] Placed ${signal} order @ ${entryPrice} on ${evalRes.levelBroken}`);
+              logs.push(`SUCCESS: [${strat.name}] Placed ${signal} order (${sizing.quantity} qty) @ ${entryPrice}`);
             }
             continue;
           }
@@ -241,7 +263,7 @@ export async function runTradingEngineCycle() {
         }
 
         // ====================================================================
-        // STANDARD STRATEGIES (EMA, RSI, SUPERTREND)
+        // STANDARD STRATEGIES (EMA, RSI, SUPERTREND) WITH DYNAMIC RISK SIZING
         // ====================================================================
         let signal: 'BUY' | 'SELL' | null = null;
         let signalReason = '';
@@ -291,17 +313,17 @@ export async function runTradingEngineCycle() {
         }
 
         if (signal && !activeTrade) {
-          const capital = strat.capital_allocation || 50000;
-          const riskAmount = capital * ((strat.risk_percentage || 1) / 100);
           const stopLossPct = strat.stop_loss_pct || 0.5;
           const slDistance = currentPrice * (stopLossPct / 100);
-          let quantity = Math.max(1, Math.floor(riskAmount / (slDistance || 1)));
 
-          if (strat.broker_name === 'DELTA') {
-            quantity = Math.max(1, Math.min(10, quantity));
-          } else if (strat.broker_name === 'METATRADER') {
-            quantity = 0.01;
-          }
+          // DYNAMIC SIZING
+          const sizing = calculateDynamicPositionSize(
+            riskConfig.walletBalance,
+            riskConfig.perTradeRiskPct,
+            slDistance,
+            strat.symbol,
+            strat.broker_name
+          );
 
           const stopLoss = signal === 'BUY' ? currentPrice - slDistance : currentPrice + slDistance;
           const takeProfit = signal === 'BUY' 
@@ -311,7 +333,7 @@ export async function runTradingEngineCycle() {
           const orderRequest: OrderRequest = {
             symbol: strat.symbol,
             side: signal,
-            quantity,
+            quantity: sizing.quantity,
             orderType: 'MARKET',
             price: currentPrice,
             stopLoss,
@@ -327,7 +349,7 @@ export async function runTradingEngineCycle() {
               broker_name: strat.broker_name,
               symbol: strat.symbol,
               side: signal,
-              quantity,
+              quantity: sizing.quantity,
               entry_price: currentPrice,
               stop_loss: stopLoss,
               take_profit: takeProfit,
@@ -340,11 +362,11 @@ export async function runTradingEngineCycle() {
             await supabase.from('system_logs').insert({
               level: 'TRADE_SIGNAL',
               source: `ENGINE_${strat.broker_name}`,
-              message: `[${strat.name}] Executed ${signal} ${quantity} ${strat.symbol} @ ${currentPrice} (${signalReason})`,
-              metadata: { orderResult, strategyId: strat.id },
+              message: `[${strat.name}] Executed ${signal} ${sizing.quantity} ${strat.symbol} @ ${currentPrice} (${signalReason}) | Risk: ₹${sizing.effectiveRisk}`,
+              metadata: { orderResult, strategyId: strat.id, sizing },
             });
 
-            logs.push(`SUCCESS: Placed ${signal} order for ${strat.name} @ ${currentPrice}`);
+            logs.push(`SUCCESS: Placed ${signal} order (${sizing.quantity} qty) for ${strat.name} @ ${currentPrice}`);
           }
         } else {
           logs.push(`[${strat.name}] Price: ${currentPrice} | Signal: ${signal || 'NEUTRAL'} | Open: ${activeTrade ? 'YES' : 'NO'}`);

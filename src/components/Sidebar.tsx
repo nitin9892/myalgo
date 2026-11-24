@@ -9,12 +9,14 @@ import {
   Terminal, 
   Activity, 
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Strategies', href: '/strategies', icon: Cpu },
+  { name: 'Risk & Capital', href: '/risk', icon: ShieldAlert },
   { name: 'Brokers & APIs', href: '/brokers', icon: Wallet },
   { name: 'Logs & Audit', href: '/logs', icon: Terminal },
 ];
@@ -87,8 +89,8 @@ export function Sidebar() {
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-slate-600">
-          <span>Protected Terminal</span>
-          <span className="text-emerald-500 font-medium">Access Code Mode</span>
+          <span>Capital Protection</span>
+          <span className="text-rose-400 font-medium">Kill Switch Armed</span>
         </div>
       </div>
     </aside>
