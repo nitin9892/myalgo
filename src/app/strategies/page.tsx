@@ -23,22 +23,22 @@ import {
 export default function StrategiesPage() {
   const [isActive, setIsActive] = useState(true);
   const [paperTrading, setPaperTrading] = useState(true);
-  const [broker, setBroker] = useState<'DHAN' | 'DELTA' | 'METATRADER'>('DHAN');
-  const [symbol, setSymbol] = useState('NIFTY');
+  const [broker, setBroker] = useState<'DHAN' | 'DELTA' | 'METATRADER'>('DELTA');
+  const [symbol, setSymbol] = useState('BTCUSD');
   
   // Strategy Parameters
   const [slCandleMode, setSlCandleMode] = useState<'signal_candle' | 'prev_candle'>('signal_candle');
   const [maxTradesPerDay, setMaxTradesPerDay] = useState(3);
-  const [lotSize, setLotSize] = useState(50);
+  const [lotSize, setLotSize] = useState(1);
   const [trailStepPoints, setTrailStepPoints] = useState(10);
   const [trailAmountPoints, setTrailAmountPoints] = useState(3);
-  const [sessionStart, setSessionStart] = useState('09:15');
-  const [noTradeStart, setNoTradeStart] = useState('11:00');
-  const [noTradeEnd, setNoTradeEnd] = useState('13:00');
-  const [squareOffTime, setSquareOffTime] = useState('15:30');
-  const [prevHigh, setPrevHigh] = useState<number>(24250);
-  const [prevLow, setPrevLow] = useState<number>(23980);
-  const [prevClose, setPrevClose] = useState<number>(24120);
+  const [sessionStart, setSessionStart] = useState('00:00');
+  const [noTradeStart, setNoTradeStart] = useState('00:00');
+  const [noTradeEnd, setNoTradeEnd] = useState('00:00');
+  const [squareOffTime, setSquareOffTime] = useState('23:59');
+  const [prevHigh, setPrevHigh] = useState<number>(96500);
+  const [prevLow, setPrevLow] = useState<number>(93200);
+  const [prevClose, setPrevClose] = useState<number>(95100);
 
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -201,22 +201,43 @@ export default function StrategiesPage() {
             <select
               value={broker}
               onChange={(e) => setBroker(e.target.value as any)}
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-emerald-500"
+              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-emerald-500 font-semibold"
             >
-              <option value="DHAN">DhanHQ (Indian Equities & F&O - NIFTY/BANKNIFTY)</option>
-              <option value="DELTA">Delta Exchange (Crypto Futures - BTCUSD/ETHUSD)</option>
-              <option value="METATRADER">MetaTrader 5 (Forex IPC Bridge - EURUSD/XAUUSD)</option>
+              <option value="DELTA">Delta Exchange (Crypto Derivatives - BTC / ETH / XRP)</option>
+              <option value="DHAN">DhanHQ (Indian Equities & F&O - NIFTY / BANKNIFTY)</option>
+              <option value="METATRADER">MetaTrader 5 (Forex IPC Bridge - EURUSD / XAUUSD)</option>
             </select>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-300">Trading Instrument / Symbol</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-300">Crypto Instrument</label>
+              <span className="text-[11px] text-slate-500">Quick Select:</span>
+            </div>
+            
+            <div className="flex items-center gap-1.5 mb-1.5">
+              {(['BTCUSD', 'ETHUSD', 'XRPUSD'] as const).map((sym) => (
+                <button
+                  key={sym}
+                  type="button"
+                  onClick={() => setSymbol(sym)}
+                  className={`flex-1 py-1 rounded-lg text-xs font-bold transition-all border ${
+                    symbol === sym
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                  }`}
+                >
+                  {sym.replace('USD', '')}
+                </button>
+              ))}
+            </div>
+
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              placeholder="e.g. NIFTY, BTCUSD, EURUSD"
-              className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-emerald-500"
+              placeholder="e.g. BTCUSD, ETHUSD, XRPUSD"
+              className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:border-emerald-500"
             />
           </div>
         </div>

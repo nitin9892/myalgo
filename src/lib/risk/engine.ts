@@ -13,8 +13,8 @@ export interface RiskSettings {
 
 export const DEFAULT_RISK_SETTINGS: RiskSettings = {
   walletBalance: 100000, // ₹1,00,000 default balance
-  maxDailyLossPct: 3.0,  // Max 3% loss per day (₹3,000)
-  perTradeRiskPct: 1.0,  // 1% risk per trade (₹1,000)
+  maxDailyLossPct: 15.0, // Max 15% overall loss per day
+  perTradeRiskPct: 5.0,  // 5% risk per trade
   maxOpenTrades: 2,
   killSwitchActive: false,
   killSwitchReason: null,
@@ -61,9 +61,9 @@ export function calculateDynamicPositionSize(
       // Cash equities (min 1 share)
       finalQuantity = Math.max(1, rawQuantity);
     }
-  } else if (broker === 'DELTA') {
-    // Crypto contracts: min 1 contract
-    finalQuantity = Math.max(1, Math.min(50, rawQuantity));
+  } else if (broker === 'DELTA' || sym.includes('BTC') || sym.includes('ETH') || sym.includes('XRP')) {
+    // Crypto contracts: min 1 contract (BTC, ETH, XRP)
+    finalQuantity = Math.max(1, rawQuantity);
   } else if (broker === 'METATRADER') {
     // Forex standard lot (0.01 micro lot = 1,000 units)
     const lotVolume = Math.max(0.01, Math.round((riskAmount / (safeSlPoints * 100000)) * 100) / 100);

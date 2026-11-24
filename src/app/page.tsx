@@ -203,9 +203,9 @@ export default function DashboardPage() {
           <Wallet className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="font-semibold text-slate-300">Active Broker:</span>
           {activeBrokerId ? (
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              {activeBrokerId} ({activeBrokerData?.balanceDisplay || 'Connected'})
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              {activeBrokerId}: {activeBrokerData?.balanceDisplay || 'Connected (Live)'}
             </span>
           ) : (
             <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700 font-medium">

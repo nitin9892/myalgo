@@ -14,13 +14,16 @@ import {
   Lock,
   ArrowRight,
   ShieldCheck,
-  Zap
+  Zap,
+  TrendingDown,
+  Coins
 } from 'lucide-react';
 
 export default function RiskManagementPage() {
   const [walletBalance, setWalletBalance] = useState<number>(100000);
-  const [maxDailyLossPct, setMaxDailyLossPct] = useState<number>(3.0);
-  const [perTradeRiskPct, setPerTradeRiskPct] = useState<number>(1.0);
+  // Defaulting to user's exact requirements: 15% Daily Loss, 5% Per-Trade Risk
+  const [maxDailyLossPct, setMaxDailyLossPct] = useState<number>(15.0);
+  const [perTradeRiskPct, setPerTradeRiskPct] = useState<number>(5.0);
   const [maxOpenTrades, setMaxOpenTrades] = useState<number>(2);
 
   const [killSwitchActive, setKillSwitchActive] = useState<boolean>(false);
@@ -30,9 +33,9 @@ export default function RiskManagementPage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
-  // Simulator State
-  const [simSymbol, setSimSymbol] = useState<'NIFTY' | 'BANKNIFTY' | 'BTCUSD' | 'EURUSD'>('NIFTY');
-  const [simSlPoints, setSimSlPoints] = useState<number>(20);
+  // Crypto Simulator State (BTC, ETH, XRP)
+  const [simSymbol, setSimSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'XRPUSD'>('BTCUSD');
+  const [simSlPoints, setSimSlPoints] = useState<number>(150);
 
   useEffect(() => {
     fetchRiskSettings();
@@ -41,7 +44,7 @@ export default function RiskManagementPage() {
   const fetchRiskSettings = async () => {
     setLoading(true);
     try {
-      // 1. Check local storage first for instant feedback
+      // 1. Check local storage first
       const localKill = localStorage.getItem('myalgo_kill_switch');
       if (localKill) {
         try {
@@ -57,8 +60,8 @@ export default function RiskManagementPage() {
       const data = await res.json();
       if (data.config) {
         setWalletBalance(data.config.walletBalance || 100000);
-        setMaxDailyLossPct(data.config.maxDailyLossPct || 3.0);
-        setPerTradeRiskPct(data.config.perTradeRiskPct || 1.0);
+        setMaxDailyLossPct(data.config.maxDailyLossPct || 15.0);
+        setPerTradeRiskPct(data.config.perTradeRiskPct || 5.0);
         setMaxOpenTrades(data.config.maxOpenTrades || 2);
         
         const isServerActive = !!(data.isKillSwitchActive || data.config.killSwitchActive);
@@ -70,7 +73,7 @@ export default function RiskManagementPage() {
 
         setTodayNetPnl(data.todayNetPnl || 0);
 
-        // Auto-sync live wallet balance from connected broker if available
+        // Auto-sync live wallet balance from connected broker
         try {
           const savedStatus = localStorage.getItem('myalgo_broker_status');
           if (savedStatus) {
@@ -114,12 +117,11 @@ export default function RiskManagementPage() {
   };
 
   const handleTriggerKillSwitch = async () => {
-    if (!confirm('EMERGENCY KILL SWITCH: This will immediately close ALL open trades across all brokers and block any new entries. Confirm?')) {
+    if (!confirm('EMERGENCY KILL SWITCH: This will immediately close ALL open trades and block any new entries. Confirm?')) {
       return;
     }
 
     const reason = 'Manual emergency kill switch triggered by user';
-    // Persist immediately in client storage
     try {
       localStorage.setItem('myalgo_kill_switch', JSON.stringify({ active: true, reason, timestamp: Date.now() }));
     } catch {}
@@ -128,14 +130,12 @@ export default function RiskManagementPage() {
     setKillSwitchReason(reason);
 
     try {
-      const res = await fetch('/api/risk', {
+      await fetch('/api/risk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ triggerEmergencyKill: true }),
       });
-      if (res.ok) {
-        alert('🚨 Kill Switch Activated! All positions squared off & trading halted.');
-      }
+      alert('🚨 Kill Switch Activated! All positions squared off & trading halted.');
     } catch (err) {
       console.error('Failed to trigger kill switch on server:', err);
     }
@@ -154,14 +154,12 @@ export default function RiskManagementPage() {
     setKillSwitchReason(null);
 
     try {
-      const res = await fetch('/api/risk', {
+      await fetch('/api/risk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resetKillSwitch: true }),
       });
-      if (res.ok) {
-        alert('Kill Switch Disarmed and Reset. Normal trading resumed.');
-      }
+      alert('Kill Switch Disarmed and Reset. Normal trading resumed.');
     } catch (err) {
       console.error('Failed to reset kill switch on server:', err);
     }
@@ -171,25 +169,21 @@ export default function RiskManagementPage() {
   const maxDailyLossAmount = (walletBalance * (maxDailyLossPct / 100));
   const perTradeRiskAmount = (walletBalance * (perTradeRiskPct / 100));
 
-  // Simulator dynamic lot size
-  const simRawQty = Math.floor(perTradeRiskAmount / Math.max(1, simSlPoints));
+  // Dynamic lot size for crypto (BTC, ETH, XRP)
+  const simRawQty = Math.max(1, Math.floor(perTradeRiskAmount / Math.max(0.1, simSlPoints)));
   let simCalculatedQty = simRawQty;
-  if (simSymbol === 'NIFTY') simCalculatedQty = Math.max(25, Math.floor(simRawQty / 25) * 25);
-  else if (simSymbol === 'BANKNIFTY') simCalculatedQty = Math.max(15, Math.floor(simRawQty / 15) * 15);
-  else if (simSymbol === 'BTCUSD') simCalculatedQty = Math.max(1, Math.min(20, simRawQty));
-  else if (simSymbol === 'EURUSD') simCalculatedQty = 0.01;
 
   return (
-    <div className="space-y-6 sm:space-y-8 max-w-5xl">
+    <div className="space-y-6 sm:space-y-8 max-w-4xl">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-rose-400" />
-            Risk Management & Kill Switch
+            <ShieldAlert className="w-6 h-6 text-emerald-400" />
+            Risk & Capital Management
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Automated capital protection: Dynamic lot sizing from SL distance, % risk controls, and automated Kill Switch.
+            2 Core Protection Rules: Overall Daily Loss limit & Per-Trade Risk allocation.
           </p>
         </div>
 
@@ -204,7 +198,7 @@ export default function RiskManagementPage() {
             </>
           ) : (
             <>
-              <SaveIcon className="w-4 h-4" /> Save Risk Settings
+              <SaveIcon className="w-4 h-4" /> Save Risk Rules
             </>
           )}
         </button>
@@ -243,7 +237,7 @@ export default function RiskManagementPage() {
                 <ShieldCheck className="w-3.5 h-3.5" /> Kill Switch Armed & Monitoring
               </span>
               <p className="text-xs text-slate-400 mt-0.5">
-                Real-time loss ceiling: <strong className="text-slate-200">{maxDailyLossPct}%</strong> of wallet (-₹{maxDailyLossAmount.toLocaleString()}).
+                Overall Daily Loss ceiling: <strong className="text-rose-400">{maxDailyLossPct}%</strong> (-₹{maxDailyLossAmount.toLocaleString()}) • Risk/Trade: <strong className="text-cyan-400">{perTradeRiskPct}%</strong> (₹{perTradeRiskAmount.toLocaleString()}).
               </p>
             </div>
           </div>
@@ -256,177 +250,148 @@ export default function RiskManagementPage() {
         </div>
       )}
 
-      {/* Top Cards: Wallet & Daily Limit */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
-        <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium text-slate-400">
-            <span>Trading Wallet Balance</span>
-            <Wallet className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-white">
-              ₹{walletBalance.toLocaleString('en-IN')}
+      {/* The 2 Core Rules Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Rule 1: Overall Daily Loss */}
+        <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+              <TrendingDown className="w-4 h-4" /> Rule 1: Overall Daily Loss
             </span>
+            <span className="text-xl font-black font-mono text-rose-400">{maxDailyLossPct}%</span>
           </div>
-          <span className="text-[11px] text-emerald-400 block">Auto-synced with connected broker</span>
-        </div>
 
-        <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium text-slate-400">
-            <span>Max Daily Loss Limit</span>
-            <span className="text-xs font-mono font-bold text-rose-400">{maxDailyLossPct}%</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-rose-400">
+          <div>
+            <div className="text-2xl font-black font-mono text-white">
               -₹{maxDailyLossAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-500 block">Circuit breaker trips when hit</span>
-        </div>
-
-        <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
-          <div className="flex items-center justify-between text-xs font-medium text-slate-400">
-            <span>Per Trade Risk Limit</span>
-            <span className="text-xs font-mono font-bold text-cyan-400">{perTradeRiskPct}%</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-cyan-400">
-              ₹{perTradeRiskAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-500 block">Fixed risk per executed order</span>
-        </div>
-      </div>
-
-      {/* Core Risk Sliders & Parameters */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <Sliders className="w-5 h-5 text-emerald-400" /> Capital & Risk Controls
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Daily Max Loss Slider */}
-          <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-200">Max Daily Loss Limit (%)</label>
-              <span className="text-sm font-bold font-mono text-rose-400">{maxDailyLossPct}%</span>
             </div>
+            <p className="text-xs text-slate-400 mt-1">
+              If cumulative loss today reaches {maxDailyLossPct}%, trading halts automatically.
+            </p>
+          </div>
+
+          {/* Slider */}
+          <div className="space-y-2 pt-2">
             <input
               type="range"
-              min="1.0"
-              max="10.0"
-              step="0.5"
+              min="5"
+              max="30"
+              step="1"
               value={maxDailyLossPct}
               onChange={(e) => setMaxDailyLossPct(Number(e.target.value))}
               className="w-full accent-rose-500 cursor-pointer h-2 bg-slate-800 rounded-lg"
             />
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>Conservative (1%)</span>
-              <span>Moderate (3%)</span>
-              <span>Aggressive (10%)</span>
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+              <span>5%</span>
+              <span className="text-rose-400 font-bold">15% (Recommended)</span>
+              <span>30%</span>
             </div>
-            <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-              If your cumulative daily loss reaches <strong className="text-rose-400">-₹{maxDailyLossAmount.toLocaleString()}</strong>, the Kill Switch will auto-halt all trading.
+          </div>
+        </div>
+
+        {/* Rule 2: Per-Trade Risk */}
+        <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+              <Percent className="w-4 h-4" /> Rule 2: Per-Trade Risk
+            </span>
+            <span className="text-xl font-black font-mono text-cyan-400">{perTradeRiskPct}%</span>
+          </div>
+
+          <div>
+            <div className="text-2xl font-black font-mono text-white">
+              ₹{perTradeRiskAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Every single executed order will strictly risk at most {perTradeRiskPct}% of capital.
             </p>
           </div>
 
-          {/* Per Trade Risk Slider */}
-          <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-200">Per-Trade Risk Allocation (%)</label>
-              <span className="text-sm font-bold font-mono text-cyan-400">{perTradeRiskPct}%</span>
-            </div>
+          {/* Slider */}
+          <div className="space-y-2 pt-2">
             <input
               type="range"
-              min="0.5"
-              max="5.0"
-              step="0.25"
+              min="1"
+              max="15"
+              step="0.5"
               value={perTradeRiskPct}
               onChange={(e) => setPerTradeRiskPct(Number(e.target.value))}
               className="w-full accent-cyan-500 cursor-pointer h-2 bg-slate-800 rounded-lg"
             />
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>Safe (0.5%)</span>
-              <span>Standard (1.0%)</span>
-              <span>High (5.0%)</span>
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+              <span>1%</span>
+              <span className="text-cyan-400 font-bold">5% (Recommended)</span>
+              <span>15%</span>
             </div>
-            <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-              Every trade will risk at most <strong className="text-cyan-400">₹{perTradeRiskAmount.toLocaleString()}</strong>. Lot size is calculated automatically from SL distance.
-            </p>
-          </div>
-
-          {/* Custom Wallet Balance Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Wallet Capital Base (₹)</label>
-            <input
-              type="number"
-              value={walletBalance}
-              onChange={(e) => setWalletBalance(Number(e.target.value))}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm sm:text-xs focus:border-emerald-500 focus:outline-none"
-            />
-            <span className="text-[11px] text-slate-500">Used as reference base for % calculations</span>
-          </div>
-
-          {/* Max Open Trades */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Max Concurrent Open Trades</label>
-            <input
-              type="number"
-              min="1"
-              max="5"
-              value={maxOpenTrades}
-              onChange={(e) => setMaxOpenTrades(Number(e.target.value))}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm sm:text-xs focus:border-emerald-500 focus:outline-none"
-            />
-            <span className="text-[11px] text-slate-500">Limits over-exposure across multiple strategies</span>
           </div>
         </div>
       </div>
 
-      {/* Dynamic Lot Sizer Simulator */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <Calculator className="w-5 h-5 text-cyan-400" />
-          Dynamic Position Sizing Simulator
-        </h2>
-        <p className="text-xs text-slate-400">
-          See how your lot size will be dynamically calculated when a trade signal is detected:
-        </p>
+      {/* Wallet Capital Input */}
+      <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Wallet className="w-5 h-5 text-emerald-400 shrink-0" />
+          <div>
+            <span className="text-xs font-bold text-white uppercase tracking-wider">Trading Capital Base</span>
+            <p className="text-xs text-slate-400">Reference balance for 15% daily loss and 5% per-trade calculations</p>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-slate-400 font-mono">₹</span>
+          <input
+            type="number"
+            value={walletBalance}
+            onChange={(e) => setWalletBalance(Number(e.target.value))}
+            className="w-36 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm focus:border-emerald-500 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Crypto Instruments Dynamic Lot Sizer Simulator (BTC, ETH, XRP) */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            <Coins className="w-5 h-5 text-amber-400" />
+            Crypto Position Sizing Simulator
+          </h2>
+          <span className="text-xs text-slate-400">Supported: BTC • ETH • XRP</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Instrument</label>
+            <label className="text-xs font-semibold text-slate-300">Crypto Instrument</label>
             <select
               value={simSymbol}
               onChange={(e: any) => setSimSymbol(e.target.value)}
-              className="w-full px-3 py-2.5 sm:py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm sm:text-xs"
+              className="w-full px-3 py-2.5 sm:py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm sm:text-xs font-semibold"
             >
-              <option value="NIFTY">NIFTY (Lot: 25)</option>
-              <option value="BANKNIFTY">BANKNIFTY (Lot: 15)</option>
-              <option value="BTCUSD">BTCUSD (Delta Crypto)</option>
-              <option value="EURUSD">EURUSD (MetaTrader 5)</option>
+              <option value="BTCUSD">BTCUSD (Bitcoin)</option>
+              <option value="ETHUSD">ETHUSD (Ethereum)</option>
+              <option value="XRPUSD">XRPUSD (Ripple)</option>
             </select>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">SL Distance (Points)</label>
+            <label className="text-xs font-semibold text-slate-300">Stop-Loss Distance (Points)</label>
             <input
               type="number"
               value={simSlPoints}
               onChange={(e) => setSimSlPoints(Number(e.target.value))}
-              min="1"
-              max="500"
+              min="0.1"
+              max="5000"
+              step="1"
               className="w-full px-3 py-2.5 sm:py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm sm:text-xs"
             />
           </div>
 
           <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
-            <span className="text-[11px] text-slate-400">Auto-Calculated Position:</span>
-            <div className="text-base font-bold font-mono text-emerald-400">
-              {simCalculatedQty} {simSymbol === 'EURUSD' ? 'Lots' : 'Qty'}
+            <span className="text-[11px] text-slate-400">Calculated Dynamic Size:</span>
+            <div className="text-lg font-black font-mono text-emerald-400">
+              {simCalculatedQty} Contracts
             </div>
             <span className="text-[10px] text-slate-500">
-              Total Risk: ₹{(simCalculatedQty * simSlPoints).toLocaleString()} ({(perTradeRiskPct)}% of wallet)
+              At 5% risk: max loss ₹{perTradeRiskAmount.toLocaleString()}
             </span>
           </div>
         </div>

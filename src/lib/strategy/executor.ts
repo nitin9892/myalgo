@@ -35,21 +35,21 @@ export interface SingleStrategyConfig {
 export const DEFAULT_MASTER_STRATEGY: SingleStrategyConfig = {
   id: 'master-5m-breakout',
   name: '5m Previous Day Levels Breakout Engine',
-  broker_name: 'DHAN',
-  symbol: 'NIFTY',
+  broker_name: 'DELTA',
+  symbol: 'BTCUSD',
   timeframe: '5m',
   is_active: true,
   paper_trading: true,
   params: {
     sl_candle_mode: 'signal_candle',
     max_trades_per_day: 3,
-    lot_size: 50,
+    lot_size: 1,
     trail_step_points: 10,
     trail_amount_points: 3,
-    session_start: '09:15',
-    no_trade_start: '11:00',
-    no_trade_end: '13:00',
-    square_off_time: '15:30',
+    session_start: '00:00',
+    no_trade_start: '00:00',
+    no_trade_end: '00:00',
+    square_off_time: '23:59',
   },
 };
 
