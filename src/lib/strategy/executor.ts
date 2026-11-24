@@ -253,6 +253,21 @@ export async function runTradingEngineCycle() {
       return { success: true, count: 1, logs };
     }
 
+    // 4.25 CHECK MAX TRADES PER DAY LIMIT (Default: 3)
+    const maxTradesPerDay = masterStrategy.params?.max_trades_per_day || 3;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const { data: todayTrades } = await supabase
+      .from('trades')
+      .select('id')
+      .gte('entry_time', startOfDay.toISOString());
+
+    if (todayTrades && todayTrades.length >= maxTradesPerDay) {
+      logs.push(`[${masterStrategy.name}] Daily maximum trades limit (${maxTradesPerDay}) reached for today.`);
+      return { success: true, count: 0, logs };
+    }
+
     // 4.3 ENTRY SIGNAL TRIGGER (5m Green breakout -> Buy at High | 5m Red breakout -> Sell at Low)
     if (!activeTrade && evalRes.signal) {
       const signal = evalRes.signal;
@@ -260,6 +275,11 @@ export async function runTradingEngineCycle() {
       const stopLoss = evalRes.stopLoss || 0;
       const takeProfit = evalRes.target || 0;
       const slPoints = evalRes.slPoints || Math.abs(entryPrice - stopLoss);
+
+      // Dynamic Medium Leverage based on Entry & Stop Loss distance
+      const slDist = Math.max(0.5, slPoints);
+      const slPct = (slDist / Math.max(1, entryPrice)) * 100;
+      const mediumLeverage = Math.max(3, Math.min(10, Math.round(50 / Math.max(2, slPct))));
 
       // Dynamic Lot Sizing based on risk % and SL distance in points
       const sizing = calculateDynamicPositionSize(
@@ -294,7 +314,7 @@ export async function runTradingEngineCycle() {
           status: 'OPEN',
           paper_trade: masterStrategy.paper_trading,
           broker_order_id: orderResult.orderId,
-          notes: `${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} (Risk: ₹${sizing.effectiveRisk})`,
+          notes: `${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} | Medium Leverage: ${mediumLeverage}x (Risk: ₹${sizing.effectiveRisk})`,
         });
 
         await supabase.from('system_logs').insert({
