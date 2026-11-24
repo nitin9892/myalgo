@@ -12,15 +12,16 @@ import {
   CheckCircle2, 
   ShieldCheck,
   TrendingDown,
-  Gauge
+  Gauge,
+  Plus
 } from 'lucide-react';
 
 export default function StrategiesPage() {
   // Step 1: Strategy A, B, or C
   const [selectedStrategy, setSelectedStrategy] = useState<'Strategy A' | 'Strategy B' | 'Strategy C'>('Strategy A');
   
-  // Step 2: Selected Instruments (BTC, ETH, SOL, XRP)
-  const [selectedInstrument, setSelectedInstrument] = useState<'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'XRPUSD'>('BTCUSD');
+  // Step 2: Multiple Selected Instruments (BTC, ETH, SOL, XRP)
+  const [selectedInstruments, setSelectedInstruments] = useState<string[]>(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
 
   // Step 3: Daily Loss in %
   const [dailyLossPct, setDailyLossPct] = useState<number>(15);
@@ -36,6 +37,13 @@ export default function StrategiesPage() {
   const [saving, setSaving] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const availableCoins = [
+    { id: 'BTCUSD', name: 'Bitcoin', tag: 'BTC' },
+    { id: 'ETHUSD', name: 'Ethereum', tag: 'ETH' },
+    { id: 'SOLUSD', name: 'Solana', tag: 'SOL' },
+    { id: 'XRPUSD', name: 'Ripple', tag: 'XRP' },
+  ] as const;
+
   useEffect(() => {
     fetchActiveStrategy();
   }, []);
@@ -49,8 +57,11 @@ export default function StrategiesPage() {
         if (s.name === 'Strategy A' || s.name === 'Strategy B' || s.name === 'Strategy C') {
           setSelectedStrategy(s.name);
         }
-        if (s.symbol && ['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'].includes(s.symbol.toUpperCase())) {
-          setSelectedInstrument(s.symbol.toUpperCase() as any);
+        if (s.parameters?.symbols && Array.isArray(s.parameters.symbols) && s.parameters.symbols.length > 0) {
+          setSelectedInstruments(s.parameters.symbols);
+        } else if (s.symbol) {
+          const parsed = s.symbol.split(',').map((x: string) => x.trim().toUpperCase()).filter(Boolean);
+          if (parsed.length > 0) setSelectedInstruments(parsed);
         }
         if (s.parameters?.daily_loss_pct) setDailyLossPct(s.parameters.daily_loss_pct);
         if (s.parameters?.per_trade_risk_pct) setPerTradeRiskPct(s.parameters.per_trade_risk_pct);
@@ -61,9 +72,31 @@ export default function StrategiesPage() {
     }
   };
 
+  const toggleInstrument = (coinId: string) => {
+    setSelectedInstruments((prev) => {
+      if (prev.includes(coinId)) {
+        if (prev.length === 1) return prev; // Keep at least one selected
+        return prev.filter((id) => id !== coinId);
+      } else {
+        return [...prev, coinId];
+      }
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedInstruments.length === 4) {
+      setSelectedInstruments(['BTCUSD']);
+    } else {
+      setSelectedInstruments(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
+    }
+  };
+
   const handleSaveAndActivate = async () => {
     setSaving(true);
     setSuccessMessage(null);
+
+    const symbolsText = selectedInstruments.join(',');
+    const coinTags = selectedInstruments.map((s) => s.replace('USD', '')).join(', ');
 
     try {
       const res = await fetch('/api/strategies', {
@@ -73,7 +106,8 @@ export default function StrategiesPage() {
           id: 'master-crypto-active',
           name: selectedStrategy,
           broker_name: 'DELTA',
-          symbol: selectedInstrument,
+          symbol: symbolsText,
+          symbols: selectedInstruments,
           dailyLossPct,
           perTradeRiskPct,
           maxTradesPerDay: 3,
@@ -84,7 +118,7 @@ export default function StrategiesPage() {
       });
 
       if (res.ok) {
-        setSuccessMessage(`Activated: ${selectedStrategy} on ${selectedInstrument.replace('USD', '')} (${dailyLossPct}% Daily Loss, ${perTradeRiskPct}% Risk/Trade, Max 3 Trades/Day, Medium Leverage)`);
+        setSuccessMessage(`Activated: ${selectedStrategy} on [${coinTags}] (${dailyLossPct}% Daily Loss, ${perTradeRiskPct}% Risk/Trade, Max 3 Trades/Day, Medium Leverage)`);
         setTimeout(() => setSuccessMessage(null), 4000);
       }
     } catch (err: any) {
@@ -104,7 +138,7 @@ export default function StrategiesPage() {
             Strategy Setup
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Choose strategy, target instrument, and risk limits in a simple sequential setup.
+            Choose strategy, target instruments (multi-select enabled), and risk limits.
           </p>
         </div>
 
@@ -165,41 +199,60 @@ export default function StrategiesPage() {
         </div>
       </div>
 
-      {/* STEP 2: Select Instruments (BTC, ETH, SOL, XRP) */}
+      {/* STEP 2: Select Instruments (Multiple Selection Enabled) */}
       <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
-        <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">2</span>
-          <h2 className="text-base font-bold text-white">Select Instrument</h2>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs font-bold">2</span>
+            <div>
+              <h2 className="text-base font-bold text-white">Select Instruments (Multiple)</h2>
+              <p className="text-[11px] text-slate-400">Tap to toggle any coin. Strategy will scan all selected coins.</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleSelectAll}
+            className="text-xs text-cyan-400 hover:text-cyan-300 px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 font-semibold"
+          >
+            {selectedInstruments.length === 4 ? 'Reset to 1' : 'Select All 4'}
+          </button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {([
-            { id: 'BTCUSD', name: 'BTC (Bitcoin)' },
-            { id: 'ETHUSD', name: 'ETH (Ethereum)' },
-            { id: 'SOLUSD', name: 'SOL (Solana)' },
-            { id: 'XRPUSD', name: 'XRP (Ripple)' },
-          ] as const).map((coin) => {
-            const isSelected = selectedInstrument === coin.id;
+          {availableCoins.map((coin) => {
+            const isSelected = selectedInstruments.includes(coin.id);
             return (
               <button
                 key={coin.id}
                 type="button"
-                onClick={() => setSelectedInstrument(coin.id)}
-                className={`p-3.5 rounded-xl text-center border font-bold text-sm transition-all flex flex-col items-center justify-center gap-1 ${
+                onClick={() => toggleInstrument(coin.id)}
+                className={`p-3.5 rounded-xl text-center border font-bold text-sm transition-all flex flex-col items-center justify-center gap-1.5 ${
                   isSelected
                     ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500 shadow-lg shadow-cyan-500/20'
-                    : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                    : 'bg-slate-950 text-slate-400 border-slate-800/80 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
                   <Coins className={`w-4 h-4 ${isSelected ? 'text-cyan-400' : 'text-slate-500'}`} />
-                  <span>{coin.id.replace('USD', '')}</span>
+                  <span>{coin.tag}</span>
                   {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 stroke-[3]" />}
                 </div>
-                <span className="text-[10px] text-slate-400">{coin.name.split(' ')[1]?.replace(/[()]/g, '')}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                  isSelected ? 'bg-cyan-500/30 text-cyan-200' : 'bg-slate-900 text-slate-500'
+                }`}>
+                  {isSelected ? '✓ Active' : '+ Tap to add'}
+                </span>
               </button>
             );
           })}
+        </div>
+
+        <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+          <span>Active Scanner Instruments:</span>
+          <span className="font-bold font-mono text-cyan-400">
+            {selectedInstruments.map((s) => s.replace('USD', '')).join(', ')} ({selectedInstruments.length}/4)
+          </span>
         </div>
       </div>
 
@@ -303,7 +356,7 @@ export default function StrategiesPage() {
           ) : (
             <>
               <Check className="w-5 h-5 text-slate-950 stroke-[3]" />
-              Save & Activate {selectedStrategy} on {selectedInstrument.replace('USD', '')}
+              Save & Activate {selectedStrategy} on [{selectedInstruments.map((s) => s.replace('USD', '')).join(', ')}]
             </>
           )}
         </button>

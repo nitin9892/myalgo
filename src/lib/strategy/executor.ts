@@ -29,6 +29,8 @@ export interface SingleStrategyConfig {
     prev_high?: number;
     prev_low?: number;
     prev_close?: number;
+    symbols?: string[];
+    [key: string]: any;
   };
 }
 
@@ -111,10 +113,17 @@ export async function runTradingEngineCycle() {
     // 2. FETCH 5M CANDLE FEED & CONNECT ADAPTER
     // ------------------------------------------------------------------------
     const adapter = getBrokerAdapter(masterStrategy.broker_name);
-    const candles = await adapter.getLatestCandles(masterStrategy.symbol, masterStrategy.timeframe || '5m', 60);
+    
+    // Support multiple instruments scanner (BTC, ETH, SOL, XRP)
+    const targetSymbols: string[] = (masterStrategy.params?.symbols && Array.isArray(masterStrategy.params.symbols) && masterStrategy.params.symbols.length > 0)
+      ? masterStrategy.params.symbols
+      : masterStrategy.symbol.split(',').map((x: string) => x.trim()).filter(Boolean);
+    const activeSymbol = targetSymbols[0] || 'BTCUSD';
+
+    const candles = await adapter.getLatestCandles(activeSymbol, masterStrategy.timeframe || '5m', 60);
 
     if (candles.length < 5) {
-      logs.push(`[${masterStrategy.name}] Waiting for 5m candle data (${candles.length}/5 candles).`);
+      logs.push(`[${masterStrategy.name}] Waiting for 5m candle data for ${activeSymbol} (${candles.length}/5 candles).`);
       return { success: true, count: 1, logs };
     }
 
@@ -286,12 +295,12 @@ export async function runTradingEngineCycle() {
         riskConfig.walletBalance,
         riskConfig.perTradeRiskPct,
         slPoints,
-        masterStrategy.symbol,
+        activeSymbol,
         masterStrategy.broker_name
       );
 
       const orderResult = await adapter.placeOrder({
-        symbol: masterStrategy.symbol,
+        symbol: activeSymbol,
         side: signal,
         quantity: sizing.quantity,
         orderType: 'MARKET',
@@ -305,7 +314,7 @@ export async function runTradingEngineCycle() {
         await supabase.from('trades').insert({
           strategy_id: masterStrategy.id,
           broker_name: masterStrategy.broker_name,
-          symbol: masterStrategy.symbol,
+          symbol: activeSymbol,
           side: signal,
           quantity: sizing.quantity,
           entry_price: entryPrice,

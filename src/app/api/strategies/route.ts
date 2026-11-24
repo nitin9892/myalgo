@@ -29,7 +29,10 @@ export async function POST(request: Request) {
     const supabase = getAdminSupabase();
 
     const strategyName = body.name || body.strategy || 'Strategy A';
-    const symbol = body.symbol || 'BTCUSD';
+    const symbolsArray = Array.isArray(body.symbols)
+      ? body.symbols
+      : (body.symbol ? body.symbol.split(',').map((x: string) => x.trim()) : ['BTCUSD']);
+    const symbol = symbolsArray.join(',');
     const dailyLossPct = Number(body.dailyLossPct || body.daily_loss_pct || 15);
     const perTradeRiskPct = Number(body.perTradeRiskPct || body.per_trade_risk_pct || 5);
     const maxTradesPerDay = Number(body.maxTradesPerDay || body.max_trades_per_day || 3);
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
       is_active: body.is_active ?? true,
       paper_trading: body.paper_trading ?? true,
       parameters: {
+        symbols: symbolsArray,
         daily_loss_pct: dailyLossPct,
         per_trade_risk_pct: perTradeRiskPct,
         max_trades_per_day: maxTradesPerDay,
