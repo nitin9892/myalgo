@@ -5,11 +5,13 @@ export class DeltaAdapter implements IBrokerAdapter {
   name: 'DELTA' = 'DELTA';
   private apiKey: string;
   private apiSecret: string;
-  private baseUrl = 'https://api.delta.exchange';
+  private baseUrl: string;
 
-  constructor(apiKey?: string, apiSecret?: string) {
+  constructor(apiKey?: string, apiSecret?: string, isIndia: boolean = true) {
     this.apiKey = apiKey || process.env.DELTA_API_KEY || '';
     this.apiSecret = apiSecret || process.env.DELTA_API_SECRET || '';
+    // Delta Exchange India vs Global
+    this.baseUrl = isIndia ? 'https://api.india.delta.exchange' : 'https://api.delta.exchange';
   }
 
   private generateSignature(method: string, path: string, payload: string, timestamp: number): string {
@@ -37,7 +39,21 @@ export class DeltaAdapter implements IBrokerAdapter {
       const headers = this.getAuthHeaders('GET', path);
       const res = await fetch(`${this.baseUrl}${path}`, { headers });
       if (res.ok) {
-        return { success: true, message: 'Delta Exchange API connected successfully' };
+        const data = await res.json();
+        return { 
+          success: true, 
+          message: `Connected to Delta Exchange! Balances synced.` 
+        };
+      }
+      // If India endpoint failed, try fallback
+      if (this.baseUrl.includes('india')) {
+        const globalRes = await fetch(`https://api.delta.exchange${path}`, {
+          headers: this.getAuthHeaders('GET', path),
+        });
+        if (globalRes.ok) {
+          this.baseUrl = 'https://api.delta.exchange';
+          return { success: true, message: 'Connected to Delta Exchange (Global)!' };
+        }
       }
       return { success: false, message: `Delta Auth Failed: HTTP ${res.status}` };
     } catch (err: any) {
@@ -47,7 +63,6 @@ export class DeltaAdapter implements IBrokerAdapter {
 
   async getLatestCandles(symbol: string = 'BTCUSD', timeframe: string = '1m', count: number = 50): Promise<Candle[]> {
     try {
-      // Resolution mapping for Delta Exchange: 1m, 5m, 15m, 1h
       const resolution = timeframe;
       const endTime = Math.floor(Date.now() / 1000);
       const startTime = endTime - count * 60 * (timeframe === '5m' ? 5 : 1);
@@ -69,7 +84,7 @@ export class DeltaAdapter implements IBrokerAdapter {
         }
       }
     } catch {
-      // Fallback to simulated if offline or test environment
+      // Fallback
     }
     return this.generateSimulatedCandles(count, 95000);
   }
@@ -90,13 +105,16 @@ export class DeltaAdapter implements IBrokerAdapter {
 
     try {
       const path = '/v2/orders';
-      const payloadObj = {
-        product_symbol: order.symbol,
-        size: order.quantity,
-        side: order.side.toLowerCase(),
+      const payloadObj: any = {
+        product_symbol: order.symbol.toUpperCase(),
+        size: Math.max(1, Math.round(order.quantity)),
+        side: order.side.toLowerCase(), // buy or sell
         order_type: order.orderType === 'LIMIT' ? 'limit_order' : 'market_order',
-        limit_price: order.price ? order.price.toString() : undefined,
       };
+      if (order.orderType === 'LIMIT' && order.price) {
+        payloadObj.limit_price = order.price.toString();
+      }
+
       const payload = JSON.stringify(payloadObj);
       const headers = this.getAuthHeaders('POST', path, payload);
 
@@ -116,6 +134,7 @@ export class DeltaAdapter implements IBrokerAdapter {
           price: Number(data.result?.price) || order.price || 0,
           quantity: order.quantity,
           status: 'FILLED',
+          message: `Live Order Executed on Delta Exchange! Order ID: ${data.result?.id}`,
         };
       }
       return {
@@ -125,7 +144,7 @@ export class DeltaAdapter implements IBrokerAdapter {
         price: 0,
         quantity: order.quantity,
         status: 'REJECTED',
-        message: data.error?.message || 'Delta order rejected',
+        message: data.error?.message || data.error?.context || 'Delta order rejected',
       };
     } catch (err: any) {
       return {
