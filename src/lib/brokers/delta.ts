@@ -37,7 +37,14 @@ export class DeltaAdapter implements IBrokerAdapter {
     return headers;
   }
 
-  async testConnection(): Promise<{ success: boolean; message: string }> {
+  async testConnection(): Promise<{
+    success: boolean;
+    message: string;
+    balance?: number;
+    currency?: string;
+    balanceDisplay?: string;
+    accountStatus?: 'CONNECTED' | 'DISCONNECTED';
+  }> {
     if (!this.apiKey || !this.apiSecret) {
       return { success: false, message: 'Please enter both Delta API Key and API Secret' };
     }
@@ -71,9 +78,36 @@ export class DeltaAdapter implements IBrokerAdapter {
             else regionName = 'Delta Global (Live)';
 
             this.baseUrl = url;
+
+            let balanceDisplay = '0.00 USDT';
+            let mainBalance = 0;
+            let mainCurrency = 'USDT';
+
+            try {
+              const data = await res.json();
+              const balances = data.result || [];
+              const nonZero = balances.filter((b: any) => parseFloat(b.balance || '0') > 0);
+              if (nonZero.length > 0) {
+                balanceDisplay = nonZero
+                  .map((b: any) => `${parseFloat(b.available_balance || b.balance).toFixed(2)} ${b.asset_symbol}`)
+                  .join(' | ');
+                const primary = nonZero.find((b: any) => b.asset_symbol === 'USDT' || b.asset_symbol === 'INR') || nonZero[0];
+                mainBalance = parseFloat(primary.available_balance || primary.balance || '0');
+                mainCurrency = primary.asset_symbol;
+              } else if (balances.length > 0) {
+                const primary = balances.find((b: any) => b.asset_symbol === 'USDT' || b.asset_symbol === 'INR') || balances[0];
+                balanceDisplay = `0.00 ${primary.asset_symbol || 'USDT'}`;
+                mainCurrency = primary.asset_symbol || 'USDT';
+              }
+            } catch {}
+
             return {
               success: true,
               message: `✅ Connected successfully to ${regionName}! Live account verified.`,
+              balance: mainBalance,
+              currency: mainCurrency,
+              balanceDisplay: balanceDisplay,
+              accountStatus: 'CONNECTED',
             };
           }
 

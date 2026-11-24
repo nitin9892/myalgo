@@ -42,7 +42,14 @@ export interface Position {
 
 export interface IBrokerAdapter {
   name: BrokerType;
-  testConnection(): Promise<{ success: boolean; message: string }>;
+  testConnection(): Promise<{
+    success: boolean;
+    message: string;
+    balance?: number;
+    currency?: string;
+    balanceDisplay?: string;
+    accountStatus?: 'CONNECTED' | 'DISCONNECTED';
+  }>;
   getLatestCandles(symbol: string, timeframe: string, count: number): Promise<Candle[]>;
   placeOrder(order: OrderRequest): Promise<OrderResult>;
   getPositions(): Promise<Position[]>;

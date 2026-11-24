@@ -49,6 +49,18 @@ export default function RiskManagementPage() {
         setKillSwitchActive(data.isKillSwitchActive || false);
         setKillSwitchReason(data.killSwitchReason || null);
         setTodayNetPnl(data.todayNetPnl || 0);
+
+        // Auto-sync live wallet balance from connected broker if available
+        try {
+          const savedStatus = localStorage.getItem('myalgo_broker_status');
+          if (savedStatus) {
+            const parsed = JSON.parse(savedStatus);
+            const liveBal = parsed.DELTA?.balance || parsed.DHAN?.balance;
+            if (liveBal && liveBal > 0) {
+              setWalletBalance(liveBal);
+            }
+          }
+        } catch {}
       }
     } catch (err) {
       console.error('Failed to load risk settings:', err);

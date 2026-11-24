@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Wallet, 
   CheckCircle2, 
@@ -31,7 +31,14 @@ interface BrokerConfig {
 export default function BrokersPage() {
   const [testingBroker, setTestingBroker] = useState<string | null>(null);
   const [firingOrder, setFiringOrder] = useState<string | null>(null);
-  const [testStatus, setTestStatus] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [testStatus, setTestStatus] = useState<Record<string, {
+    success: boolean;
+    message: string;
+    balance?: number;
+    currency?: string;
+    balanceDisplay?: string;
+    accountStatus?: string;
+  }>>({});
   const [orderStatus, setOrderStatus] = useState<Record<string, { success: boolean; message: string }>>({});
 
   // Credentials state
@@ -42,6 +49,19 @@ export default function BrokersPage() {
   });
 
   const [isLiveMoney, setIsLiveMoney] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedCreds = localStorage.getItem('myalgo_broker_creds');
+      if (savedCreds) {
+        setCredentials((prev) => ({ ...prev, ...JSON.parse(savedCreds) }));
+      }
+      const savedStatus = localStorage.getItem('myalgo_broker_status');
+      if (savedStatus) {
+        setTestStatus(JSON.parse(savedStatus));
+      }
+    } catch {}
+  }, []);
 
   const brokers: BrokerConfig[] = [
     {
@@ -89,10 +109,16 @@ export default function BrokersPage() {
   ];
 
   const updateCred = (brokerId: string, key: string, value: string) => {
-    setCredentials((prev) => ({
-      ...prev,
-      [brokerId]: { ...prev[brokerId], [key]: value },
-    }));
+    setCredentials((prev) => {
+      const updated = {
+        ...prev,
+        [brokerId]: { ...prev[brokerId], [key]: value },
+      };
+      try {
+        localStorage.setItem('myalgo_broker_creds', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
   };
 
   const testConnection = async (brokerId: string) => {
@@ -104,10 +130,23 @@ export default function BrokersPage() {
         body: JSON.stringify({ broker: brokerId, credentials: credentials[brokerId] }),
       });
       const data = await res.json();
-      setTestStatus((prev) => ({
-        ...prev,
-        [brokerId]: { success: data.success, message: data.message },
-      }));
+      setTestStatus((prev) => {
+        const updated = {
+          ...prev,
+          [brokerId]: {
+            success: data.success,
+            message: data.message,
+            balance: data.balance,
+            currency: data.currency,
+            balanceDisplay: data.balanceDisplay,
+            accountStatus: data.success ? 'CONNECTED' : 'DISCONNECTED',
+          },
+        };
+        try {
+          localStorage.setItem('myalgo_broker_status', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
     } catch (err: any) {
       setTestStatus((prev) => ({
         ...prev,
@@ -192,11 +231,21 @@ export default function BrokersPage() {
             <div key={broker.id} className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-bold text-white">{broker.name}</h2>
                     <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                       {broker.badge}
                     </span>
+                    {status?.success ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        CONNECTED (LIVE)
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                        NOT CONNECTED
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-400 mt-1">{broker.title}</p>
                 </div>
@@ -210,6 +259,31 @@ export default function BrokersPage() {
                   API Docs <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
+
+              {/* Live Connected Wallet Balance Banner */}
+              {status?.success && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-950 border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                        Live Verified Account Balance
+                      </span>
+                      <div className="text-xl font-black text-emerald-400 font-mono tracking-tight flex items-center gap-2">
+                        <span>{status.balanceDisplay || (status.balance !== undefined ? `${status.balance} ${status.currency || ''}` : '0.00 USDT')}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs px-3 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Live Execution Ready
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Special Region selector for Delta */}
               {broker.id === 'DELTA' && (
