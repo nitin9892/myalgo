@@ -79,27 +79,61 @@ export class DeltaAdapter implements IBrokerAdapter {
 
             this.baseUrl = url;
 
-            let balanceDisplay = '0.00 USDT';
+            let balanceDisplay = '₹0.00 INR';
             let mainBalance = 0;
-            let mainCurrency = 'USDT';
+            let mainCurrency = 'INR';
 
             try {
               const data = await res.json();
               const balances = data.result || [];
-              const nonZero = balances.filter((b: any) => parseFloat(b.balance || '0') > 0);
-              if (nonZero.length > 0) {
-                balanceDisplay = nonZero
-                  .map((b: any) => `${parseFloat(b.available_balance || b.balance).toFixed(2)} ${b.asset_symbol}`)
-                  .join(' | ');
-                const primary = nonZero.find((b: any) => b.asset_symbol === 'USDT' || b.asset_symbol === 'INR') || nonZero[0];
-                mainBalance = parseFloat(primary.available_balance || primary.balance || '0');
-                mainCurrency = primary.asset_symbol;
-              } else if (balances.length > 0) {
-                const primary = balances.find((b: any) => b.asset_symbol === 'USDT' || b.asset_symbol === 'INR') || balances[0];
-                balanceDisplay = `0.00 ${primary.asset_symbol || 'USDT'}`;
-                mainCurrency = primary.asset_symbol || 'USDT';
+              
+              // 1. Check for explicit INR balance in Delta India wallet
+              const inrItem = balances.find((b: any) => b.asset_symbol?.toUpperCase() === 'INR');
+              const refUsdItem = balances.find((b: any) => 
+                b.asset_symbol?.toUpperCase().includes('REF') || 
+                b.asset_symbol?.toUpperCase() === 'USD'
+              );
+              const usdtItem = balances.find((b: any) => b.asset_symbol?.toUpperCase() === 'USDT');
+
+              const inrVal = inrItem ? parseFloat(inrItem.available_balance || inrItem.balance || '0') : 0;
+              const refUsdVal = refUsdItem ? parseFloat(refUsdItem.available_balance || refUsdItem.balance || '0') : 0;
+              const usdtVal = usdtItem ? parseFloat(usdtItem.available_balance || usdtItem.balance || '0') : 0;
+
+              // Delta Exchange India official conversion: 1 REF_USD = ₹85 INR
+              if (inrVal > 0) {
+                mainBalance = inrVal;
+                mainCurrency = 'INR';
+                balanceDisplay = `₹${inrVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`;
+              } else if (refUsdVal > 0) {
+                // Margin is denominated in REF_USD -> Display equivalent in INR (1 REF_USD = ₹85)
+                const inrEquivalent = refUsdVal * 85;
+                mainBalance = inrEquivalent;
+                mainCurrency = 'INR';
+                balanceDisplay = `₹${inrEquivalent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`;
+              } else if (usdtVal > 0) {
+                const inrEquivalent = usdtVal * 85;
+                mainBalance = inrEquivalent;
+                mainCurrency = 'INR';
+                balanceDisplay = `₹${inrEquivalent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`;
+              } else {
+                const nonZero = balances.filter((b: any) => parseFloat(b.balance || '0') > 0);
+                if (nonZero.length > 0) {
+                  const first = nonZero[0];
+                  const rawVal = parseFloat(first.available_balance || first.balance || '0');
+                  const isUsdLike = first.asset_symbol?.toUpperCase().includes('USD');
+                  const inrEquivalent = isUsdLike ? rawVal * 85 : rawVal;
+                  mainBalance = inrEquivalent;
+                  mainCurrency = 'INR';
+                  balanceDisplay = `₹${inrEquivalent.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`;
+                } else {
+                  balanceDisplay = '₹0.00 INR';
+                  mainBalance = 0;
+                  mainCurrency = 'INR';
+                }
               }
-            } catch {}
+            } catch (err) {
+              console.error('Failed to parse Delta balances:', err);
+            }
 
             return {
               success: true,
@@ -214,12 +248,40 @@ Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
 
     try {
       const path = '/v2/orders';
+      const sym = order.symbol.toUpperCase();
+
+      // Resolve numeric product_id for Delta matching engine
+      const knownProductIds: Record<string, number> = {
+        'BTCUSD': 27,
+        'ETHUSD': 28,
+        'SOLUSD': 84,
+        'XRPUSD': 15,
+      };
+
+      let productId: number | undefined = knownProductIds[sym];
+      if (!productId) {
+        try {
+          const prodRes = await fetch(`${this.baseUrl}/v2/products?symbol=${sym}`);
+          if (prodRes.ok) {
+            const prodData = await prodRes.json();
+            if (prodData.result?.id) {
+              productId = Number(prodData.result.id);
+            } else if (Array.isArray(prodData.result) && prodData.result[0]?.id) {
+              productId = Number(prodData.result[0].id);
+            }
+          }
+        } catch {}
+      }
+
       const payloadObj: any = {
-        product_symbol: order.symbol.toUpperCase(),
+        product_symbol: sym,
         size: Math.max(1, Math.round(order.quantity)),
         side: order.side.toLowerCase(),
         order_type: order.orderType === 'LIMIT' ? 'limit_order' : 'market_order',
       };
+      if (productId) {
+        payloadObj.product_id = productId;
+      }
       if (order.orderType === 'LIMIT' && order.price) {
         payloadObj.limit_price = order.price.toString();
       }

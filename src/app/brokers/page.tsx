@@ -299,23 +299,35 @@ export default function BrokersPage() {
                   {/* Verified Balance */}
                   <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
                     <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-                      Live Account Balance
+                      Live Account Balance (INR)
                     </span>
                     <div className="text-2xl font-black text-emerald-400 font-mono">
-                      {status.balanceDisplay || (status.balance !== undefined ? `${status.balance} ${status.currency || 'USDT'}` : '0.00 USDT')}
+                      {status.balanceDisplay ? (
+                        status.balanceDisplay.toUpperCase().includes('REF') || (status.balanceDisplay.toUpperCase().includes('USD') && !status.balanceDisplay.toUpperCase().includes('INR'))
+                          ? `₹${(parseFloat(status.balanceDisplay.match(/[\d,.]+/)?.[0]?.replace(/,/g, '') || '0') * 85).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`
+                          : status.balanceDisplay
+                      ) : (status.balance !== undefined ? `₹${Number(status.balance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${status.currency || 'INR'}` : '₹0.00 INR')}
                     </div>
                     <span className="text-[11px] text-emerald-400/80 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Ready for automated order execution
+                      Live account connected & verified in INR
                     </span>
                   </div>
 
                   {/* Quick Test Fire for BTC, ETH, SOL, XRP */}
                   <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                    <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-                      One-Click Test Order (BTC • ETH • SOL • XRP)
-                    </span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                        ⚡ Punch Min Lot Test Order (1 Contract)
+                      </span>
+                      <span className="text-[10px] text-amber-400 font-mono font-bold">
+                        Min Size: 1 Contract
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Click below to punch a live minimum lot size test order to verify order matching with {broker.name}:
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
                       {(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'] as const).map((sym) => (
                         <button
                           key={sym}
