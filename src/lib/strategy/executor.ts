@@ -1,6 +1,7 @@
 import { getAdminSupabase } from '../supabase';
 import { getBrokerAdapter } from '../brokers';
 import { calculateEMA, calculateRSI, calculateSupertrend } from './indicators';
+import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrategyParams } from './prev_day_breakout';
 import { BrokerType, OrderRequest } from '../brokers/types';
 
 export interface StrategyRecord {
@@ -9,7 +10,7 @@ export interface StrategyRecord {
   broker_name: BrokerType;
   symbol: string;
   timeframe: string;
-  strategy_type: 'EMA_CROSSOVER' | 'RSI_REVERSAL' | 'SUPERTREND' | 'CUSTOM_WEBHOOK';
+  strategy_type: 'EMA_CROSSOVER' | 'RSI_REVERSAL' | 'SUPERTREND' | 'CUSTOM_WEBHOOK' | 'PREV_DAY_BREAKOUT';
   is_active: boolean;
   paper_trading: boolean;
   capital_allocation: number;
@@ -39,19 +40,212 @@ export async function runTradingEngineCycle() {
     for (const strat of strategies as StrategyRecord[]) {
       try {
         const adapter = getBrokerAdapter(strat.broker_name);
-        const candles = await adapter.getLatestCandles(strat.symbol, strat.timeframe, 60);
+        const candles = await adapter.getLatestCandles(strat.symbol, strat.timeframe || '5m', 60);
 
-        if (candles.length < 25) {
+        if (candles.length < 5) {
           logs.push(`[${strat.name}] Not enough candles (${candles.length}) for calculation.`);
           continue;
         }
 
         const closes = candles.map((c) => c.close);
         const currentPrice = closes[closes.length - 1];
+
+        // Check if an open trade already exists for this strategy
+        const { data: openTrades } = await supabase
+          .from('trades')
+          .select('*')
+          .eq('strategy_id', strat.id)
+          .eq('status', 'OPEN');
+
+        const activeTrade = openTrades && openTrades.length > 0 ? openTrades[0] : null;
+
+        // ====================================================================
+        // SPECIALIZED STRATEGY: PREVIOUS DAY LEVELS BREAKOUT & STEP TRAILING
+        // ====================================================================
+        if (strat.strategy_type === 'PREV_DAY_BREAKOUT') {
+          // Calculate or extract previous day levels
+          const p = strat.parameters || {};
+          let prevHigh = Number(p.prev_high);
+          let prevLow = Number(p.prev_low);
+          let prevClose = Number(p.prev_close);
+
+          // If levels not explicitly provided, estimate from candle range
+          if (!prevHigh || !prevLow || !prevClose) {
+            const highs = candles.map((c) => c.high);
+            const lows = candles.map((c) => c.low);
+            prevHigh = Math.max(...highs.slice(0, -10));
+            prevLow = Math.min(...lows.slice(0, -10));
+            prevClose = candles[candles.length - 15]?.close || currentPrice;
+          }
+
+          const levels: KeyLevels = { prevHigh, prevLow, prevClose };
+          const strategyParams: BreakoutStrategyParams = {
+            slCandleMode: p.sl_candle_mode || 'signal_candle',
+            maxTradesPerDay: p.max_trades_per_day || 3,
+            lotSize: p.lot_size || 50,
+            trailStepPoints: p.trail_step_points || 10,
+            trailAmountPoints: p.trail_amount_points || 3,
+            sessionStart: p.session_start || '09:15',
+            noTradeStart: p.no_trade_start || '11:00',
+            noTradeEnd: p.no_trade_end || '13:00',
+            squareOffTime: p.square_off_time || '15:30',
+          };
+
+          // Active Position State if already in a trade
+          let activePosState: ActivePositionState | null = null;
+          if (activeTrade) {
+            activePosState = {
+              tradeId: activeTrade.id,
+              symbol: strat.symbol,
+              side: activeTrade.side as 'BUY' | 'SELL',
+              entryPrice: Number(activeTrade.entry_price),
+              initialSlPrice: Number(activeTrade.stop_loss),
+              initialSlPoints: Math.abs(Number(activeTrade.entry_price) - Number(activeTrade.stop_loss)),
+              initialTargetPrice: Number(activeTrade.take_profit),
+              currentSlPrice: Number(activeTrade.stop_loss),
+              currentTargetPrice: Number(activeTrade.take_profit),
+              trailingMilestones: activeTrade.metadata?.trailingMilestones || 0,
+              highestFavorablePoints: activeTrade.metadata?.highestFavorable || 0,
+              entryTime: activeTrade.entry_time,
+            };
+          }
+
+          // Evaluate Strategy
+          const evalRes = evaluatePrevDayBreakout(
+            candles,
+            levels,
+            strategyParams,
+            activePosState,
+            currentPrice
+          );
+
+          // 1. Handle Active Trade Exits (SL, Target, or 15:30 Square-Off)
+          if (activeTrade && evalRes.exitSignal?.shouldExit) {
+            const exitReason = evalRes.exitSignal.reason || 'MANUAL_EXIT';
+            const exitPrice = evalRes.exitSignal.exitPrice || currentPrice;
+            const entryPrice = Number(activeTrade.entry_price);
+            const qty = Number(activeTrade.quantity);
+
+            // Compute P&L
+            const isBuy = activeTrade.side === 'BUY';
+            const pnl = isBuy ? (exitPrice - entryPrice) * qty : (entryPrice - exitPrice) * qty;
+            const pnlPct = (pnl / (entryPrice * qty)) * 100;
+
+            // Place Exit Order with Broker
+            const exitSide = isBuy ? 'SELL' : 'BUY';
+            await adapter.placeOrder({
+              symbol: strat.symbol,
+              side: exitSide,
+              quantity: qty,
+              orderType: 'MARKET',
+              paperTrade: strat.paper_trading,
+            });
+
+            // Update Trade in Supabase
+            await supabase
+              .from('trades')
+              .update({
+                status: 'CLOSED',
+                exit_price: exitPrice,
+                exit_time: new Date().toISOString(),
+                pnl: Number(pnl.toFixed(2)),
+                pnl_percentage: Number(pnlPct.toFixed(2)),
+                notes: `Closed via ${exitReason} @ ${exitPrice}`,
+              })
+              .eq('id', activeTrade.id);
+
+            await supabase.from('system_logs').insert({
+              level: 'TRADE_SIGNAL',
+              source: `EXIT_${strat.broker_name}`,
+              message: `[${strat.name}] POSITION CLOSED: ${exitReason} for ${strat.symbol} @ ${exitPrice} | P&L: ₹${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)`,
+              metadata: { exitReason, exitPrice, pnl },
+            });
+
+            logs.push(`EXIT: [${strat.name}] Closed position via ${exitReason} @ ${exitPrice} (P&L: ₹${pnl.toFixed(2)})`);
+            continue;
+          }
+
+          // 2. Handle Trailing SL & Target Update
+          if (activeTrade && evalRes.trailingUpdate) {
+            const { newSl, newTarget, milestone, pointsTrailed } = evalRes.trailingUpdate;
+
+            await supabase
+              .from('trades')
+              .update({
+                stop_loss: newSl,
+                take_profit: newTarget,
+                notes: `Trailed SL to ${newSl}, Target to ${newTarget} (Milestone #${milestone})`,
+              })
+              .eq('id', activeTrade.id);
+
+            await supabase.from('system_logs').insert({
+              level: 'INFO',
+              source: 'TRAILING_ENGINE',
+              message: `[${strat.name}] TRAILING MILESTONE #${milestone}: Trailed SL by +${pointsTrailed} pts to ${newSl}, Target to ${newTarget}`,
+              metadata: evalRes.trailingUpdate,
+            });
+
+            logs.push(`TRAIL: [${strat.name}] Milestone #${milestone} reached! New SL: ${newSl}, Target: ${newTarget}`);
+            continue;
+          }
+
+          // 3. Handle Fresh Entry Trigger
+          if (!activeTrade && evalRes.signal) {
+            const signal = evalRes.signal;
+            const entryPrice = evalRes.entryPrice || currentPrice;
+            const stopLoss = evalRes.stopLoss || 0;
+            const takeProfit = evalRes.target || 0;
+            const quantity = strategyParams.lotSize || 50;
+
+            const orderResult = await adapter.placeOrder({
+              symbol: strat.symbol,
+              side: signal,
+              quantity,
+              orderType: 'MARKET',
+              price: entryPrice,
+              stopLoss,
+              takeProfit,
+              paperTrade: strat.paper_trading,
+            });
+
+            if (orderResult.success) {
+              await supabase.from('trades').insert({
+                strategy_id: strat.id,
+                broker_name: strat.broker_name,
+                symbol: strat.symbol,
+                side: signal,
+                quantity,
+                entry_price: entryPrice,
+                stop_loss: stopLoss,
+                take_profit: takeProfit,
+                status: 'OPEN',
+                paper_trade: strat.paper_trading,
+                broker_order_id: orderResult.orderId,
+                notes: `${evalRes.signalReason} | 1:3 Target: ${takeProfit} | SL: ${stopLoss}`,
+              });
+
+              await supabase.from('system_logs').insert({
+                level: 'TRADE_SIGNAL',
+                source: `ENGINE_${strat.broker_name}`,
+                message: `[${strat.name}] ENTRY TRIGGERED: ${signal} ${quantity} ${strat.symbol} @ ${entryPrice} (SL: ${stopLoss}, 1:3 TP: ${takeProfit})`,
+                metadata: { orderResult, evalRes },
+              });
+
+              logs.push(`SUCCESS: [${strat.name}] Placed ${signal} order @ ${entryPrice} on ${evalRes.levelBroken}`);
+            }
+            continue;
+          }
+
+          logs.push(`[${strat.name}] Price: ${currentPrice} | Window: ${evalRes.blockReason || 'SCANNING'} | Position: ${activeTrade ? 'ACTIVE' : 'NONE'}`);
+          continue;
+        }
+
+        // ====================================================================
+        // STANDARD STRATEGIES (EMA, RSI, SUPERTREND)
+        // ====================================================================
         let signal: 'BUY' | 'SELL' | null = null;
         let signalReason = '';
 
-        // Strategy logic evaluation
         if (strat.strategy_type === 'EMA_CROSSOVER') {
           const fastPeriod = strat.parameters?.fast_ema || 9;
           const slowPeriod = strat.parameters?.slow_ema || 21;
@@ -96,28 +290,17 @@ export async function runTradingEngineCycle() {
           }
         }
 
-        // Check if an open trade already exists for this strategy
-        const { data: openTrades } = await supabase
-          .from('trades')
-          .select('*')
-          .eq('strategy_id', strat.id)
-          .eq('status', 'OPEN');
-
-        const hasOpenTrade = openTrades && openTrades.length > 0;
-
-        if (signal && !hasOpenTrade) {
-          // Calculate Quantity & Risk
+        if (signal && !activeTrade) {
           const capital = strat.capital_allocation || 50000;
           const riskAmount = capital * ((strat.risk_percentage || 1) / 100);
           const stopLossPct = strat.stop_loss_pct || 0.5;
           const slDistance = currentPrice * (stopLossPct / 100);
           let quantity = Math.max(1, Math.floor(riskAmount / (slDistance || 1)));
 
-          // Special sizing for Crypto/Forex
           if (strat.broker_name === 'DELTA') {
             quantity = Math.max(1, Math.min(10, quantity));
           } else if (strat.broker_name === 'METATRADER') {
-            quantity = 0.01; // 1 micro lot default
+            quantity = 0.01;
           }
 
           const stopLoss = signal === 'BUY' ? currentPrice - slDistance : currentPrice + slDistance;
@@ -136,11 +319,9 @@ export async function runTradingEngineCycle() {
             paperTrade: strat.paper_trading,
           };
 
-          // Execute Order
           const orderResult = await adapter.placeOrder(orderRequest);
 
           if (orderResult.success) {
-            // Record trade in Supabase
             await supabase.from('trades').insert({
               strategy_id: strat.id,
               broker_name: strat.broker_name,
@@ -164,11 +345,9 @@ export async function runTradingEngineCycle() {
             });
 
             logs.push(`SUCCESS: Placed ${signal} order for ${strat.name} @ ${currentPrice}`);
-          } else {
-            logs.push(`FAILED: Could not place order for ${strat.name}: ${orderResult.message}`);
           }
         } else {
-          logs.push(`[${strat.name}] Price: ${currentPrice} | Signal: ${signal || 'NEUTRAL'} | Open Positions: ${hasOpenTrade ? '1' : '0'}`);
+          logs.push(`[${strat.name}] Price: ${currentPrice} | Signal: ${signal || 'NEUTRAL'} | Open: ${activeTrade ? 'YES' : 'NO'}`);
         }
       } catch (innerErr: any) {
         logs.push(`ERROR in ${strat.name}: ${innerErr.message}`);
