@@ -24,14 +24,17 @@ export class DeltaAdapter implements IBrokerAdapter {
   private getAuthHeaders(method: string, path: string, queryStr: string = '', payload: string = '') {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const signature = this.generateSignature(method, path, queryStr, payload, timestamp);
-    return {
-      'Content-Type': 'application/json',
+    const headers: Record<string, string> = {
       'Accept': 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MyAlgo/1.0',
       'api-key': this.apiKey,
       'signature': signature,
       'timestamp': timestamp,
     };
+    if (payload && method.toUpperCase() !== 'GET') {
+      headers['Content-Type'] = 'application/json';
+    }
+    return headers;
   }
 
   async testConnection(): Promise<{ success: boolean; message: string }> {
@@ -44,7 +47,8 @@ export class DeltaAdapter implements IBrokerAdapter {
       ? ['https://api.india.delta.exchange', 'https://api.delta.exchange', 'https://cdn-ind.testnet.deltaex.org', 'https://testnet-api.delta.exchange']
       : ['https://api.delta.exchange', 'https://api.india.delta.exchange', 'https://testnet-api.delta.exchange', 'https://cdn-ind.testnet.deltaex.org'];
 
-    const endpoints = ['/v2/positions', '/v2/wallet/balances'];
+    // Call /v2/wallet/balances first as it requires zero query parameters
+    const endpoints = ['/v2/wallet/balances', '/v2/positions/margined'];
     let lastErrorCode = '';
     let lastErrorDetail = '';
     let detectedIp = '';
@@ -69,7 +73,7 @@ export class DeltaAdapter implements IBrokerAdapter {
             this.baseUrl = url;
             return {
               success: true,
-              message: `✅ Connected successfully to ${regionName}! Account verified.`,
+              message: `✅ Connected successfully to ${regionName}! Live account verified.`,
             };
           }
 
@@ -82,18 +86,16 @@ export class DeltaAdapter implements IBrokerAdapter {
 
             if (clientIp) detectedIp = clientIp;
 
-            // If Delta recognized the key on this server (e.g. IP whitelist error, signature error)
-            if (code && code !== 'invalid_api_key') {
+            // If Delta returned IP whitelist error, break immediately to show IP
+            if (code.includes('ip') || code.includes('whitelist')) {
               lastErrorCode = code;
               lastErrorDetail = msg || code;
               matchedRegion = url.includes('india') ? 'Delta India' : 'Delta Global';
               break;
             }
 
-            if (!lastErrorCode || lastErrorCode === 'invalid_api_key') {
-              lastErrorCode = code || lastErrorCode;
-              lastErrorDetail = msg || code || lastErrorDetail;
-            }
+            lastErrorCode = code || lastErrorCode;
+            lastErrorDetail = msg || code || lastErrorDetail;
           } catch {
             lastErrorDetail = `HTTP ${res.status}`;
           }
@@ -102,8 +104,8 @@ export class DeltaAdapter implements IBrokerAdapter {
         }
       }
 
-      // If we found an IP whitelist or signature error, key exists! Stop overwriting with subsequent URLs
-      if (lastErrorCode && lastErrorCode !== 'invalid_api_key') {
+      // If we found an IP whitelist error, key exists! Stop overwriting with subsequent URLs
+      if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist')) {
         break;
       }
     }
