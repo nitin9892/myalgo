@@ -54,7 +54,8 @@ export default function AdminPage() {
     if (savedAdmin) {
       setIsAdminLoggedIn(true);
       setAdminEmail(savedAdmin);
-      fetchTokens();
+      document.cookie = `myalgo_admin_session=${encodeURIComponent(savedAdmin)}; Path=/; Max-Age=604800;`;
+      fetchTokens(savedAdmin);
     }
   }, []);
 
@@ -72,8 +73,9 @@ export default function AdminPage() {
       const data = await res.json();
       if (data.success) {
         localStorage.setItem('myalgo_admin_email', adminEmail.trim());
+        document.cookie = `myalgo_admin_session=${encodeURIComponent(adminEmail.trim())}; Path=/; Max-Age=604800;`;
         setIsAdminLoggedIn(true);
-        fetchTokens();
+        fetchTokens(adminEmail.trim());
       } else {
         setLoginError(data.message || 'Login failed');
       }
@@ -90,10 +92,15 @@ export default function AdminPage() {
     setIsAdminLoggedIn(false);
   };
 
-  const fetchTokens = async () => {
+  const fetchTokens = async (overrideEmail?: string) => {
     setLoadingTokens(true);
+    const emailToUse = overrideEmail || adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
-      const res = await fetch('/api/admin/tokens');
+      const res = await fetch('/api/admin/tokens', {
+        headers: {
+          'x-admin-email': emailToUse,
+        },
+      });
       const data = await res.json();
       if (data.tokens) {
         setTokens(data.tokens);
@@ -118,22 +125,28 @@ export default function AdminPage() {
     e.preventDefault();
     if (!newTokenCode) return;
     setCreatingToken(true);
+    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/tokens', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-admin-email': emailToUse,
+        },
         body: JSON.stringify({
           code: newTokenCode,
           label: newTokenLabel || 'Trader Access',
           max_uses: maxUses,
           expires_in_days: expiryDays,
+          adminEmail: emailToUse,
         }),
       });
       const data = await res.json();
       if (data.success) {
+        alert(`✅ Access code [${newTokenCode}] generated successfully!`);
         setNewTokenCode('');
         setNewTokenLabel('');
-        fetchTokens();
+        fetchTokens(emailToUse);
       } else {
         alert(data.error || 'Failed to create token');
       }
@@ -145,11 +158,15 @@ export default function AdminPage() {
   };
 
   const handleToggleActive = async (id: string, currentStatus: boolean) => {
+    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/tokens', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, is_active: !currentStatus }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-admin-email': emailToUse,
+        },
+        body: JSON.stringify({ id, is_active: !currentStatus, adminEmail: emailToUse }),
       });
       if (res.ok) {
         setTokens((prev) =>
@@ -345,7 +362,7 @@ export default function AdminPage() {
             <Key className="w-5 h-5 text-emerald-400" /> Active Access Tokens ({tokens.length})
           </h2>
           <button
-            onClick={fetchTokens}
+            onClick={() => fetchTokens()}
             className="text-xs text-cyan-400 hover:underline"
           >
             Refresh List

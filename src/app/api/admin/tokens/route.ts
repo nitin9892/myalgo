@@ -1,99 +1,122 @@
 import { NextResponse } from 'next/server';
-import { getAdminSupabase } from '@/lib/supabase';
 import { isAuthorizedAdminEmail } from '@/lib/auth/admin';
+import { 
+  getAllAccessTokens, 
+  createAccessToken, 
+  updateAccessTokenStatus 
+} from '@/lib/auth/tokenStorage';
 
 export const dynamic = 'force-dynamic';
 
-// Helper to check admin cookie
-function checkAdminAuth(request: Request): boolean {
+// Multi-source helper to verify admin authentication (cookie, header, or body)
+function checkAdminAuth(request: Request, body?: any): { authorized: boolean; email?: string } {
+  // 1. Check Cookie
   const cookieHeader = request.headers.get('cookie') || '';
   const match = cookieHeader.match(/myalgo_admin_session=([^;]+)/);
-  if (!match) return false;
-  return isAuthorizedAdminEmail(decodeURIComponent(match[1]));
+  if (match) {
+    const email = decodeURIComponent(match[1]);
+    if (isAuthorizedAdminEmail(email)) return { authorized: true, email };
+  }
+
+  // 2. Check x-admin-email header
+  const headerEmail = request.headers.get('x-admin-email');
+  if (headerEmail && isAuthorizedAdminEmail(headerEmail)) {
+    return { authorized: true, email: headerEmail.trim() };
+  }
+
+  // 3. Check body email
+  if (body?.adminEmail && isAuthorizedAdminEmail(body.adminEmail)) {
+    return { authorized: true, email: body.adminEmail.trim() };
+  }
+
+  return { authorized: false };
 }
 
 export async function GET(request: Request) {
-  if (!checkAdminAuth(request)) {
+  const auth = checkAdminAuth(request);
+  if (!auth.authorized) {
     return NextResponse.json({ error: 'Unauthorized: Admin login required' }, { status: 401 });
   }
 
-  const supabase = getAdminSupabase();
-  const { data, error } = await supabase
-    .from('access_tokens')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    return NextResponse.json({
-      tokens: [
-        { id: '1', code: 'ALGO-MASTER-777', label: 'Master Admin Token', is_active: true, max_uses: 9999, used_count: 5, created_at: new Date().toISOString() },
-        { id: '2', code: 'VIP-ACCESS-2026', label: 'VIP Trader Pass', is_active: true, max_uses: 50, used_count: 2, created_at: new Date().toISOString() }
-      ]
-    });
+  try {
+    const tokens = await getAllAccessTokens();
+    return NextResponse.json({ success: true, tokens });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message, tokens: [] }, { status: 500 });
   }
-
-  return NextResponse.json({ tokens: data || [] });
 }
 
 export async function POST(request: Request) {
-  if (!checkAdminAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
-    const { code, label, max_uses = 10, expires_in_days } = await request.json();
+    const body = await request.json();
+    const auth = checkAdminAuth(request, body);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 401 });
+    }
+
+    const { code, label, max_uses = 10, expires_in_days } = body;
     if (!code) {
       return NextResponse.json({ error: 'Token code is required' }, { status: 400 });
     }
 
-    const cleanCode = code.trim().toUpperCase();
-    const expiresAt = expires_in_days 
-      ? new Date(Date.now() + Number(expires_in_days) * 24 * 60 * 60 * 1000).toISOString()
-      : null;
+    const result = await createAccessToken(
+      code,
+      label || 'Trader Access',
+      Number(max_uses) || 10,
+      expires_in_days ? Number(expires_in_days) : undefined,
+      auth.email || 'ADMIN'
+    );
 
-    const supabase = getAdminSupabase();
-    const { data, error } = await supabase
-      .from('access_tokens')
-      .insert({
-        code: cleanCode,
-        label: label || 'Standard Trader',
-        max_uses: Number(max_uses) || 10,
-        expires_at: expiresAt,
-        is_active: true,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!result.success) {
+      return NextResponse.json({ error: result.error || 'Failed to generate token' }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, token: data });
+    return NextResponse.json({ success: true, token: result.token });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
-  if (!checkAdminAuth(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
-    const { id, is_active } = await request.json();
-    const supabase = getAdminSupabase();
-    const { data, error } = await supabase
-      .from('access_tokens')
-      .update({ is_active })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const body = await request.json();
+    const auth = checkAdminAuth(request, body);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    return NextResponse.json({ success: true, token: data });
+    const { id, is_active } = body;
+    if (!id || typeof is_active !== 'boolean') {
+      return NextResponse.json({ error: 'Invalid token parameters' }, { status: 400 });
+    }
+
+    const result = await updateAccessTokenStatus(id, is_active);
+    if (!result.success) {
+      return NextResponse.json({ error: result.error || 'Failed to update token' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const auth = checkAdminAuth(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: 'Missing token ID' }, { status: 400 });
+    }
+
+    // Revoke token on delete
+    const result = await updateAccessTokenStatus(id, false);
+    return NextResponse.json({ success: result.success });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
