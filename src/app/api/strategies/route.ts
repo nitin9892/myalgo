@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     const dailyLossPct = Number(body.dailyLossPct || body.daily_loss_pct || 15);
     const perTradeRiskPct = Number(body.perTradeRiskPct || body.per_trade_risk_pct || 5);
     const maxTradesPerDay = Number(body.maxTradesPerDay || body.max_trades_per_day || 3);
+    const leverageMode = (body.leverageMode || body.leverage_mode || 'MANUAL').toUpperCase() === 'DYNAMIC' ? 'DYNAMIC' : 'MANUAL';
+    const leverage = Number(body.leverage || 10);
 
     // Sync risk configuration
     await saveRiskConfiguration({
@@ -58,7 +60,8 @@ export async function POST(request: Request) {
         daily_loss_pct: dailyLossPct,
         per_trade_risk_pct: perTradeRiskPct,
         max_trades_per_day: maxTradesPerDay,
-        leverage_mode: 'MEDIUM',
+        leverage_mode: leverageMode,
+        leverage: leverage,
         ...(body.params || {}),
       },
       updated_at: new Date().toISOString(),
@@ -73,10 +76,11 @@ export async function POST(request: Request) {
       console.warn('DB upsert error (fallback to local success):', error.message);
     }
 
+    const leverageLabel = leverageMode === 'MANUAL' ? `${leverage}x (Manual)` : 'Dynamic Medium (5x-10x)';
     await supabase.from('system_logs').insert({
       level: 'INFO',
       source: 'STRATEGY_CONFIG',
-      message: `Active Strategy Configured: [${strategyName}] on ${symbol} | Daily Loss: ${dailyLossPct}% | Risk/Trade: ${perTradeRiskPct}% | Max Trades/Day: ${maxTradesPerDay} | Medium Leverage`,
+      message: `Active Strategy Configured: [${strategyName}] on ${symbol} | Daily Loss: ${dailyLossPct}% | Risk/Trade: ${perTradeRiskPct}% | Max Trades/Day: ${maxTradesPerDay} | Leverage: ${leverageLabel}`,
       metadata: strategyRecord,
     });
 

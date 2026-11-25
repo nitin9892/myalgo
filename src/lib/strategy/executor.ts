@@ -53,6 +53,8 @@ export const DEFAULT_MASTER_STRATEGY: SingleStrategyConfig = {
     no_trade_start: '00:00',
     no_trade_end: '00:00',
     square_off_time: '23:59',
+    leverage_mode: 'MANUAL',
+    leverage: 10,
   },
 };
 
@@ -332,10 +334,19 @@ export async function runTradingEngineCycle() {
       const takeProfit = evalRes.target || 0;
       const slPoints = evalRes.slPoints || Math.abs(entryPrice - stopLoss);
 
-      // Dynamic Medium Leverage based on Entry & Stop Loss distance
-      const slDist = Math.max(0.5, slPoints);
-      const slPct = (slDist / Math.max(1, entryPrice)) * 100;
-      const mediumLeverage = Math.max(3, Math.min(10, Math.round(50 / Math.max(2, slPct))));
+      // Leverage calculation: Check if user selected MANUAL or DYNAMIC mode
+      const isDynamic = String(p.leverage_mode || '').toUpperCase() === 'DYNAMIC';
+      let appliedLeverage: number;
+
+      if (isDynamic) {
+        // Dynamic Medium Leverage based on Entry & Stop Loss distance
+        const slDist = Math.max(0.5, slPoints);
+        const slPct = (slDist / Math.max(1, entryPrice)) * 100;
+        appliedLeverage = Math.max(3, Math.min(10, Math.round(50 / Math.max(2, slPct))));
+      } else {
+        // Manual Leverage option chosen by user (e.g. 2x, 5x, 10x, 25x, 50x)
+        appliedLeverage = Math.max(1, Math.min(100, Number(p.leverage) || 10));
+      }
 
       // Dynamic Lot Sizing based on risk % and SL distance in points
       const sizing = calculateDynamicPositionSize(
@@ -355,10 +366,12 @@ export async function runTradingEngineCycle() {
         stopLoss,
         takeProfit,
         paperTrade: masterStrategy.paper_trading,
+        leverage: appliedLeverage,
       });
 
       if (orderResult.success) {
         const setupTag = evalRes.setupName ? `[${evalRes.setupName}]` : '[Breakout Engine]';
+        const levTag = isDynamic ? `Dynamic Medium Leverage: ${appliedLeverage}x` : `Manual Leverage: ${appliedLeverage}x`;
         await supabase.from('trades').insert({
           strategy_id: masterStrategy.id,
           broker_name: masterStrategy.broker_name,
@@ -371,7 +384,7 @@ export async function runTradingEngineCycle() {
           status: 'OPEN',
           paper_trade: masterStrategy.paper_trading,
           broker_order_id: orderResult.orderId,
-          notes: `${setupTag} ${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} | Medium Leverage: ${mediumLeverage}x (Risk: ₹${sizing.effectiveRisk})`,
+          notes: `${setupTag} ${evalRes.signalReason} | Dynamic Qty: ${sizing.quantity} | ${levTag} (Risk: ₹${sizing.effectiveRisk})`,
         });
 
         await supabase.from('system_logs').insert({

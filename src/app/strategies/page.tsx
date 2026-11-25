@@ -35,6 +35,10 @@ export default function StrategiesPage() {
   // Step 5: Max 3 Trades a Day
   const [maxTradesPerDay] = useState<number>(3);
 
+  // Step 6: Leverage Mode & Manual Leverage
+  const [leverageMode, setLeverageMode] = useState<'MANUAL' | 'DYNAMIC'>('MANUAL');
+  const [manualLeverage, setManualLeverage] = useState<number>(10);
+
   // State
   const [paperTrading, setPaperTrading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -68,6 +72,12 @@ export default function StrategiesPage() {
         }
         if (s.parameters?.daily_loss_pct) setDailyLossPct(s.parameters.daily_loss_pct);
         if (s.parameters?.per_trade_risk_pct) setPerTradeRiskPct(s.parameters.per_trade_risk_pct);
+        if (s.parameters?.leverage_mode) {
+          setLeverageMode(s.parameters.leverage_mode.toUpperCase() === 'DYNAMIC' ? 'DYNAMIC' : 'MANUAL');
+        }
+        if (s.parameters?.leverage) {
+          setManualLeverage(Number(s.parameters.leverage) || 10);
+        }
         setPaperTrading(s.paper_trading ?? true);
       }
     } catch (err) {
@@ -114,14 +124,16 @@ export default function StrategiesPage() {
           dailyLossPct,
           perTradeRiskPct,
           maxTradesPerDay: 3,
-          leverageMode: 'MEDIUM',
+          leverageMode,
+          leverage: manualLeverage,
           is_active: true,
           paper_trading: paperTrading,
         }),
       });
 
       if (res.ok) {
-        setSuccessMessage(`Activated: ${selectedStrategy} on [${coinTags}] (${dailyLossPct}% Daily Loss, ${perTradeRiskPct}% Risk/Trade, Max 3 Trades/Day, Medium Leverage)`);
+        const levLabel = leverageMode === 'MANUAL' ? `${manualLeverage}x Manual Leverage` : 'Dynamic Medium Leverage (5x-10x)';
+        setSuccessMessage(`Activated: ${selectedStrategy} on [${coinTags}] (${dailyLossPct}% Daily Loss, ${perTradeRiskPct}% Risk/Trade, Max 3 Trades/Day, ${levLabel})`);
         setTimeout(() => setSuccessMessage(null), 4000);
       }
     } catch (err: any) {
@@ -320,35 +332,123 @@ export default function StrategiesPage() {
         </div>
       </div>
 
-      {/* STEP 5 & 6: Max 3 Trades a Day & Medium Leverage */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Max 3 Trades a Day */}
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-2.5">
-            <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">5</span>
-            <div>
-              <span className="text-xs font-bold text-white">Max Trades a Day</span>
-              <p className="text-[11px] text-slate-400">Strict ceiling per 24hr cycle</p>
-            </div>
+      {/* STEP 5: Max 3 Trades a Day */}
+      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-2.5">
+          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">5</span>
+          <div>
+            <span className="text-xs font-bold text-white">Max Trades a Day</span>
+            <p className="text-[11px] text-slate-400">Strict ceiling per 24hr cycle (resets 01:00 AM IST)</p>
           </div>
-          <span className="px-3 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-black text-sm">
-            Max 3 Trades
-          </span>
         </div>
+        <span className="px-3 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-black text-sm">
+          Max 3 Trades
+        </span>
+      </div>
 
-        {/* Dynamic Medium Leverage */}
-        <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-md">
+      {/* STEP 6: Leverage Mode (Manual Leverage Option vs Dynamic Medium) */}
+      <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-xs font-bold">6</span>
             <div>
-              <span className="text-xs font-bold text-white">Dynamic Leverage</span>
-              <p className="text-[11px] text-slate-400">Calculated on Entry & Stop Loss</p>
+              <span className="text-xs font-bold text-white">Leverage Mode & Multiplier</span>
+              <p className="text-[11px] text-slate-400">Choose custom manual leverage or auto dynamic medium mode</p>
             </div>
           </div>
-          <span className="px-3 py-1 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 font-black text-xs">
-            Medium Mode (5x-10x)
-          </span>
+
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setLeverageMode('MANUAL')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                leverageMode === 'MANUAL'
+                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Manual Leverage
+            </button>
+            <button
+              type="button"
+              onClick={() => setLeverageMode('DYNAMIC')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                leverageMode === 'DYNAMIC'
+                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Dynamic Medium (5x-10x)
+            </button>
+          </div>
         </div>
+
+        {leverageMode === 'MANUAL' ? (
+          <div className="space-y-3.5 pt-3 border-t border-slate-800/80">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-300">Selected Manual Leverage:</span>
+              <span className="text-lg font-black font-mono text-amber-400 bg-amber-500/15 border border-amber-500/30 px-3.5 py-1 rounded-xl shadow-sm">
+                {manualLeverage}x
+              </span>
+            </div>
+
+            {/* Quick Preset Buttons */}
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1.5 block font-medium">Quick Select Presets:</label>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                {[2, 3, 5, 10, 15, 20, 25, 50].map((lev) => (
+                  <button
+                    key={lev}
+                    type="button"
+                    onClick={() => setManualLeverage(lev)}
+                    className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                      manualLeverage === lev
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20 font-black scale-105'
+                        : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {lev}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Precision Slider */}
+            <div className="space-y-1.5 pt-1">
+              <input
+                type="range"
+                min="1"
+                max="50"
+                step="1"
+                value={manualLeverage}
+                onChange={(e) => setManualLeverage(Number(e.target.value))}
+                className="w-full accent-amber-500 cursor-pointer h-2 bg-slate-800 rounded-lg"
+              />
+              <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
+                <span>1x (Min)</span>
+                <span className="text-amber-400 font-semibold">10x Default</span>
+                <span>50x (Max)</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80 leading-relaxed">
+              ⚡ Orders will be executed directly with fixed <strong className="text-amber-400 font-bold">{manualLeverage}x</strong> leverage. Margin requirement is calculated on entry size divided by {manualLeverage}.
+            </p>
+          </div>
+        ) : (
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-300">Dynamic Medium Leverage Engine</span>
+              <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-400 font-black text-xs border border-amber-500/30">
+                5x – 10x Auto Scaled
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Leverage is dynamically calculated on every trade based on entry price and distance to signal candle stop loss. Tighter stops get up to 10x leverage; wider stops are auto-reduced to 5x-3x to strictly safeguard capital.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 6 Core Setups Rule Matrix (PDH, PDL, PDC) */}

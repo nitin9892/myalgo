@@ -273,6 +273,20 @@ Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
         } catch {}
       }
 
+      // Set leverage on product if provided
+      if (order.leverage && productId) {
+        try {
+          const levPath = '/v2/orders/leverage';
+          const levPayload = JSON.stringify({ product_id: productId, leverage: order.leverage.toString() });
+          const levHeaders = this.getAuthHeaders('POST', levPath, '', levPayload);
+          await fetch(`${this.baseUrl}${levPath}`, {
+            method: 'POST',
+            headers: levHeaders,
+            body: levPayload,
+          });
+        } catch {}
+      }
+
       const payloadObj: any = {
         product_symbol: sym,
         size: Math.max(1, Math.round(order.quantity)),

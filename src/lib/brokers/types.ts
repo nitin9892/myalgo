@@ -18,6 +18,7 @@ export interface OrderRequest {
   stopLoss?: number;
   takeProfit?: number;
   paperTrade?: boolean;
+  leverage?: number;
 }
 
 export interface OrderResult {

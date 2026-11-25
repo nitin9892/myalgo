@@ -80,6 +80,58 @@ export default function DashboardPage() {
   const [killSwitchActive, setKillSwitchActive] = useState(false);
   const [killSwitchReason, setKillSwitchReason] = useState<string | null>(null);
   const [connectedBrokers, setConnectedBrokers] = useState<Record<string, any>>({});
+  const [isSyncingBalance, setIsSyncingBalance] = useState(false);
+  const [lastBalanceSyncTime, setLastBalanceSyncTime] = useState<string>('');
+
+  // Live real-time balance auto-sync from broker API
+  const syncLiveBrokerBalance = async () => {
+    try {
+      const savedCreds = localStorage.getItem('myalgo_broker_creds');
+      const savedStatus = localStorage.getItem('myalgo_broker_status');
+      if (!savedCreds || !savedStatus) return;
+
+      const creds = JSON.parse(savedCreds);
+      const statusObj = JSON.parse(savedStatus);
+
+      // Find active/connected broker
+      const activeEntry = Object.entries(statusObj).find(([_, stat]: [string, any]) => stat?.success);
+      if (!activeEntry) return;
+
+      const [activeBroker] = activeEntry;
+      const brokerCreds = creds[activeBroker];
+      if (!brokerCreds) return;
+
+      setIsSyncingBalance(true);
+      const res = await fetch('/api/brokers/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker: activeBroker, credentials: brokerCreds }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        const updatedStatus = {
+          ...statusObj,
+          [activeBroker]: {
+            ...statusObj[activeBroker],
+            success: true,
+            balance: data.balance,
+            currency: data.currency,
+            balanceDisplay: data.balanceDisplay,
+            accountStatus: 'CONNECTED',
+            lastSynced: data.syncedAt,
+          },
+        };
+        localStorage.setItem('myalgo_broker_status', JSON.stringify(updatedStatus));
+        setConnectedBrokers(updatedStatus);
+        setLastBalanceSyncTime(new Date().toLocaleTimeString());
+      }
+    } catch (e) {
+      console.warn('Auto balance sync error:', e);
+    } finally {
+      setIsSyncingBalance(false);
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -165,8 +217,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboardData();
+    syncLiveBrokerBalance();
+
     const interval = setInterval(fetchDashboardData, 4000);
-    return () => clearInterval(interval);
+    // Background live broker balance auto-sync every 12 seconds
+    const balanceInterval = setInterval(syncLiveBrokerBalance, 12000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(balanceInterval);
+    };
   }, []);
 
   // Trigger one trade cycle manually
@@ -177,6 +237,7 @@ export default function DashboardPage() {
       const data = await res.json();
       setCycleResult(data);
       await fetchDashboardData();
+      await syncLiveBrokerBalance();
     } catch (err: any) {
       setCycleResult({ error: err.message });
     } finally {
@@ -252,6 +313,7 @@ export default function DashboardPage() {
       const data = await res.json();
       alert(data.message || 'Position squared off!');
       await fetchDashboardData();
+      await syncLiveBrokerBalance();
     } catch (err: any) {
       alert(`Square-off failed: ${err.message}`);
     } finally {
@@ -293,6 +355,7 @@ export default function DashboardPage() {
           details: data,
         });
         await fetchDashboardData();
+        await syncLiveBrokerBalance();
       } else {
         setTestOrderResult({
           success: false,
@@ -380,10 +443,24 @@ export default function DashboardPage() {
           <Wallet className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="font-semibold text-slate-300">Active Broker:</span>
           {activeBrokerId ? (
-            <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              {activeBrokerId}: {formatDisplayBalance(activeBrokerData)}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                {activeBrokerId}: {formatDisplayBalance(activeBrokerData)}
+              </span>
+              <button
+                onClick={syncLiveBrokerBalance}
+                disabled={isSyncingBalance}
+                title="Auto-syncs real live balance from broker every 12s. Click to sync now."
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-emerald-400 text-[11px] font-semibold border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSyncingBalance ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
+                <span>{isSyncingBalance ? 'Syncing...' : 'Auto-Sync'}</span>
+                {lastBalanceSyncTime && !isSyncingBalance && (
+                  <span className="text-[10px] text-slate-500 font-mono hidden md:inline">({lastBalanceSyncTime})</span>
+                )}
+              </button>
+            </div>
           ) : (
             <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700 font-medium">
               No Broker Connected

@@ -71,6 +71,51 @@ export default function BrokersPage() {
     } catch {}
   }, []);
 
+  // Periodic live balance auto-sync for connected broker
+  useEffect(() => {
+    const autoSyncInterval = setInterval(async () => {
+      try {
+        const savedCreds = localStorage.getItem('myalgo_broker_creds');
+        const savedStatus = localStorage.getItem('myalgo_broker_status');
+        if (!savedCreds || !savedStatus) return;
+
+        const creds = JSON.parse(savedCreds);
+        const statusObj = JSON.parse(savedStatus);
+
+        const connectedId = Object.keys(statusObj).find((id) => statusObj[id]?.success);
+        if (connectedId && creds[connectedId]) {
+          const res = await fetch('/api/brokers/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ broker: connectedId, credentials: creds[connectedId] }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setTestStatus((prev) => {
+              const updated = {
+                ...prev,
+                [connectedId]: {
+                  ...prev[connectedId],
+                  success: true,
+                  balance: data.balance,
+                  currency: data.currency,
+                  balanceDisplay: data.balanceDisplay,
+                  accountStatus: 'CONNECTED',
+                },
+              };
+              try {
+                localStorage.setItem('myalgo_broker_status', JSON.stringify(updated));
+              } catch {}
+              return updated;
+            });
+          }
+        }
+      } catch {}
+    }, 12000);
+
+    return () => clearInterval(autoSyncInterval);
+  }, []);
+
   const brokers: BrokerConfig[] = [
     {
       id: 'DELTA',
@@ -133,7 +178,7 @@ export default function BrokersPage() {
   const testConnection = async (brokerId: string) => {
     setTestingBroker(brokerId);
     try {
-      const res = await fetch('/api/brokers/test', {
+      const res = await fetch('/api/brokers/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ broker: brokerId, credentials: credentials[brokerId] }),
@@ -277,12 +322,22 @@ export default function BrokersPage() {
                     </div>
                   </div>
 
-                  {/* Clean Green Status Badge */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 text-sm font-black shadow-lg shadow-emerald-500/20">
+                  {/* Clean Green Status Badge & Actions */}
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 text-xs sm:text-sm font-black shadow-lg shadow-emerald-500/20">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
                       CONNECTED (LIVE)
                     </div>
+
+                    <button
+                      onClick={() => testConnection(broker.id)}
+                      disabled={testingBroker === broker.id}
+                      className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-emerald-400 px-3 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 border border-slate-700 transition-all disabled:opacity-50"
+                      title="Auto-syncs every 12s. Click to refresh live balance now."
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${testingBroker === broker.id ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
+                      <span>{testingBroker === broker.id ? 'Syncing...' : 'Sync Balance'}</span>
+                    </button>
 
                     <button
                       onClick={() => handleDisconnectBroker(broker.id)}
@@ -310,7 +365,7 @@ export default function BrokersPage() {
                     </div>
                     <span className="text-[11px] text-emerald-400/80 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Live account connected & verified in INR
+                      Live balance auto-syncing every 12s (INR)
                     </span>
                   </div>
 
