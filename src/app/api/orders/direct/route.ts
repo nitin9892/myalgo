@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const { broker, symbol, side, quantity, isPaper = false, credentials } = await request.json();
+    const { broker, symbol, side, quantity, isPaper = false, leverage = 100, credentials } = await request.json();
 
     if (!broker || !symbol || !side || !quantity) {
       return NextResponse.json({ success: false, message: 'Missing order parameters' }, { status: 400 });
@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       }, { status: 403 });
     }
 
+    const appliedLeverage = Number(leverage || 100);
     const adapter = getBrokerAdapter(broker as BrokerType, credentials);
     const orderRequest: OrderRequest = {
       symbol: symbol.toUpperCase(),
@@ -30,12 +31,14 @@ export async function POST(request: Request) {
       quantity: Number(quantity),
       orderType: 'MARKET',
       paperTrade: isPaper,
+      leverage: appliedLeverage,
     };
 
     const result = await adapter.placeOrder(orderRequest);
     const supabase = getAdminSupabase();
 
     if (result.success) {
+      const modeLabel = isPaper ? 'Manual Paper Execution' : 'Manual LIVE Money Execution';
       await supabase.from('trades').insert({
         broker_name: broker,
         symbol: orderRequest.symbol,
@@ -45,14 +48,14 @@ export async function POST(request: Request) {
         status: 'OPEN',
         paper_trade: isPaper,
         broker_order_id: result.orderId,
-        notes: isPaper ? 'Manual Paper Execution' : 'Manual LIVE Money Execution',
+        notes: `${modeLabel} | Test Order (${appliedLeverage}x Leverage)`,
       });
 
       await supabase.from('system_logs').insert({
         level: 'TRADE_SIGNAL',
         source: `DIRECT_${broker}`,
-        message: `Direct Order: ${side} ${quantity} ${symbol} (${isPaper ? 'PAPER' : 'LIVE MONEY'})`,
-        metadata: { result },
+        message: `Direct Test Order: ${side} ${quantity} ${symbol} (${appliedLeverage}x Leverage, ${isPaper ? 'PAPER' : 'LIVE MONEY'})`,
+        metadata: { result, leverage: appliedLeverage },
       });
     }
 

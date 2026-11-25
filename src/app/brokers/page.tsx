@@ -229,7 +229,7 @@ export default function BrokersPage() {
   const fireDirectOrder = async (broker: BrokerConfig, customSymbol?: string) => {
     const symbolToTrade = customSymbol || selectedCryptoSymbol || broker.defaultSymbol;
     const modeText = isLiveMoney ? 'REAL MONEY' : 'PAPER TRADING';
-    if (!confirm(`Place ${modeText} BUY order on ${broker.name} for 1 ${symbolToTrade}?`)) {
+    if (!confirm(`Place ${modeText} BUY order on ${broker.name} for 1 ${symbolToTrade} with 100x Leverage?`)) {
       return;
     }
 
@@ -244,13 +244,14 @@ export default function BrokersPage() {
           side: 'BUY',
           quantity: 1,
           isPaper: !isLiveMoney,
+          leverage: 100,
           credentials: credentials[broker.id],
         }),
       });
       const data = await res.json();
       setOrderStatus((prev) => ({
         ...prev,
-        [broker.id]: { success: data.success, message: data.message || (data.success ? `Order placed for ${symbolToTrade}!` : 'Order Failed') },
+        [broker.id]: { success: data.success, message: data.message || (data.success ? `100x Test Order placed for ${symbolToTrade}!` : 'Order Failed') },
       }));
     } catch (err: any) {
       setOrderStatus((prev) => ({
@@ -373,14 +374,14 @@ export default function BrokersPage() {
                   <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-                        ⚡ Punch Min Lot Test Order (1 Contract)
+                        ⚡ Punch Min Lot Test Order (100x Leverage)
                       </span>
-                      <span className="text-[10px] text-amber-400 font-mono font-bold">
-                        Min Size: 1 Contract
+                      <span className="text-[10px] text-purple-400 font-mono font-bold bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30">
+                        100x Leverage
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      Click below to punch a live minimum lot size test order to verify order matching with {broker.name}:
+                      Click below to punch a live minimum lot size test order with <strong className="text-purple-400">100x Leverage</strong> to verify order matching with {broker.name}:
                     </p>
                     <div className="flex items-center gap-2 pt-1">
                       {(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'] as const).map((sym) => (

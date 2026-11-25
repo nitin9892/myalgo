@@ -343,6 +343,7 @@ export default function DashboardPage() {
           side: testOrderSide,
           quantity: minQty,
           isPaper: !isTestOrderLive,
+          leverage: 100,
           credentials: creds[targetBroker],
         }),
       });
@@ -351,7 +352,7 @@ export default function DashboardPage() {
       if (data.success) {
         setTestOrderResult({
           success: true,
-          message: `✅ Test order filled successfully! Order ID: #${data.orderId || 'LIVE'} | ${testOrderSide} ${minQty} ${testOrderSymbol} @ ${data.price || 'Market'}`,
+          message: `✅ Test order filled successfully! Order ID: #${data.orderId || 'LIVE'} | ${testOrderSide} ${minQty} ${testOrderSymbol} (100x Leverage) @ ${data.price || 'Market'}`,
           details: data,
         });
         await fetchDashboardData();
@@ -942,6 +943,20 @@ export default function DashboardPage() {
                 <span className="text-slate-400 block text-[10px]">Order Type</span>
                 <span className="font-mono font-bold text-amber-400">MARKET</span>
               </div>
+            </div>
+
+            {/* 100x Leverage Info */}
+            <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-500/50 flex items-center justify-between text-xs shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+                <div>
+                  <span className="font-bold text-white block">Execution Leverage</span>
+                  <span className="text-[10px] text-purple-300">Fast test verification mode</span>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-lg bg-purple-500/25 text-purple-200 border border-purple-500/50 font-black font-mono text-xs shadow">
+                100x Leverage
+              </span>
             </div>
 
             {/* Live Money vs Paper Toggle */}

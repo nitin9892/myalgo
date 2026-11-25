@@ -296,6 +296,9 @@ Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
       if (productId) {
         payloadObj.product_id = productId;
       }
+      if (order.leverage) {
+        payloadObj.leverage = order.leverage.toString();
+      }
       if (order.orderType === 'LIMIT' && order.price) {
         payloadObj.limit_price = order.price.toString();
       }
