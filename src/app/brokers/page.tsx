@@ -131,7 +131,7 @@ export default function BrokersPage() {
         { key: 'apiKey', label: 'Delta API Key', placeholder: 'delta_api_key_...' },
         { key: 'apiSecret', label: 'Delta API Secret', placeholder: 'delta_secret_...', isSecret: true },
       ],
-      note: 'Delta Settings > API Keys: Permissions must have "Read" & "Trade" enabled.',
+      note: 'Delta Settings > API Keys: Permissions must have "Read" & "Trade" enabled. 💡 Pro-Tip: "Whitelisted IP address" field ko bilkul KHALI / EMPTY chhod dein taaki baar-baar IP change na karna pade.',
     },
     {
       id: 'DHAN',

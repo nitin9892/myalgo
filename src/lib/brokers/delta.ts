@@ -181,10 +181,15 @@ export class DeltaAdapter implements IBrokerAdapter {
     // Construct human-friendly explanation for the exact Delta error code
     let diagnosticAdvice = `Delta Error (${lastErrorCode || lastErrorDetail})`;
 
-    if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist') || detectedIp) {
-      diagnosticAdvice = `🚨 IP Whitelist Required on ${matchedRegion || 'Delta Exchange'}!
-Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
-👉 Fix: Go to Delta Settings > API Keys > edit your key > paste "${detectedIp}" in "Whitelisted IP address" and Save.`;
+    if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist')) {
+      diagnosticAdvice = `🚨 Delta IP Restriction Active (${lastErrorCode})!
+Delta Exchange ke API Key me IP restriction laga hua hai.
+👉 Permanent Solution (Baar-baar change karne ki zaroorat nahi padegi):
+1. Delta Exchange par login karein > Settings > API Keys me jayein.
+2. Apni key ko "Edit" karein.
+3. "Whitelisted IP address" field ko bilkul EMPTY / BLANK (khali) chhod dein aur Save kar dein!
+Delta Exchange me IP field OPTIONAL hota hai — jab ye box khali hota hai toh Delta kisi bhi network/IP se order allow karta hai aur aapko baar-baar IP change nahi karna padega.
+(Current detected IP: ${detectedIp || 'Dynamic IP'})`;
     } else if (lastErrorCode === 'invalid_api_key') {
       diagnosticAdvice = `Invalid API Key (invalid_api_key). Delta Exchange does not recognize this key. Please check:
 1. Is your account on Delta India (india.delta.exchange) or Delta Global (delta.exchange)? Switch the region button above accordingly.

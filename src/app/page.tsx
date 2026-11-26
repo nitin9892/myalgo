@@ -55,13 +55,6 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [squaringOffId, setSquaringOffId] = useState<string | null>(null);
 
-  // Test Order Punch State
-  const [testOrderModalOpen, setTestOrderModalOpen] = useState(false);
-  const [testOrderSymbol, setTestOrderSymbol] = useState('BTCUSD');
-  const [testOrderSide, setTestOrderSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [isPunchingTestOrder, setIsPunchingTestOrder] = useState(false);
-  const [testOrderResult, setTestOrderResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
-
   // Live Stats State (100% Real from Supabase & Broker)
   const [stats, setStats] = useState({
     todayPnl: 0,
@@ -350,59 +343,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Handle punching minimum lot size test order
-  const handlePunchTestOrder = async () => {
-    setIsPunchingTestOrder(true);
-    setTestOrderResult(null);
-
-    try {
-      const savedCreds = localStorage.getItem('myalgo_broker_creds');
-      const creds = savedCreds ? JSON.parse(savedCreds) : {};
-      const targetBroker = activeBrokerId || 'DELTA';
-
-      // Minimum lot size: 1 contract for Delta (BTC/ETH/SOL/XRP), 1 for Dhan, 0.01 for MT5
-      const minQty = targetBroker === 'METATRADER' ? 0.01 : 1;
-
-      const res = await fetch('/api/orders/direct', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          broker: targetBroker,
-          symbol: testOrderSymbol,
-          side: testOrderSide,
-          quantity: minQty,
-          isPaper: false,
-          leverage: 100,
-          credentials: creds[targetBroker],
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setTestOrderResult({
-          success: true,
-          message: `✅ Test order filled successfully! Order ID: #${data.orderId || 'LIVE'} | ${testOrderSide} ${minQty} ${testOrderSymbol} (100x Leverage) @ ${data.price || 'Market'}`,
-          details: data,
-        });
-        await fetchDashboardData();
-        await syncLiveBrokerBalance();
-      } else {
-        setTestOrderResult({
-          success: false,
-          message: data.message || 'Order was rejected by broker.',
-          details: data,
-        });
-      }
-    } catch (err: any) {
-      setTestOrderResult({
-        success: false,
-        message: err.message || 'Network error while punching test order',
-      });
-    } finally {
-      setIsPunchingTestOrder(false);
-    }
-  };
-
   // Find active single broker
   const connectedEntry = Object.entries(connectedBrokers).find(([_, stat]) => stat?.success);
   const activeBrokerId = connectedEntry ? connectedEntry[0] : null;
@@ -432,7 +372,7 @@ export default function DashboardPage() {
           <button
             onClick={handleToggleAlgoSwitch}
             disabled={isTogglingAlgo}
-            className={`flex items-center justify-between sm:justify-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs font-black transition-all shadow-md active:scale-95 disabled:opacity-50 ${
+            className={`flex items-center justify-between sm:justify-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs font-black transition-all shadow-md active:scale-95 disabled:opacity-50 ${
               algoActive
                 ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
                 : 'bg-slate-800/90 hover:bg-slate-800 text-slate-400 border-slate-700'
@@ -461,17 +401,6 @@ export default function DashboardPage() {
             </span>
           </button>
 
-          {/* Minimum Lot Test Order Button */}
-          <button
-            onClick={() => setTestOrderModalOpen(true)}
-            disabled={killSwitchActive}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
-            title="Punch 1 minimum lot size verification order"
-          >
-            <Send className="w-4 h-4 text-amber-400" />
-            <span>Test Order (Min Lot)</span>
-          </button>
-
           {/* Direct Kill Switch Button in Header */}
           <button
             onClick={killSwitchActive ? handleResetKillSwitch : handleTriggerKillSwitch}
@@ -483,15 +412,6 @@ export default function DashboardPage() {
           >
             <AlertOctagon className="w-4 h-4" />
             {killSwitchActive ? 'Disarm Kill Switch' : 'Kill Switch'}
-          </button>
-
-          <button
-            onClick={triggerCycleNow}
-            disabled={isRunningCycle || killSwitchActive}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 active:scale-95"
-          >
-            <Play className={`w-4 h-4 fill-slate-950 ${isRunningCycle ? 'animate-spin' : ''}`} />
-            {isRunningCycle ? 'Evaluating Feeds...' : 'Run Trade Cycle'}
           </button>
 
           <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1">
@@ -532,15 +452,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            onClick={() => setTestOrderModalOpen(true)}
-            disabled={killSwitchActive}
-            className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-sm active:scale-95 disabled:opacity-50"
-          >
-            <Send className="w-3 h-3 text-amber-400" />
-            Punch Min Lot
-          </button>
-
           <Link 
             href="/brokers" 
             className="text-cyan-400 hover:underline font-semibold flex items-center gap-1 text-xs"
@@ -928,165 +839,6 @@ export default function DashboardPage() {
           </>
         )}
       </div>
-
-      {/* Test Order Punch Modal */}
-      {testOrderModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-                  <Send className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">Punch Test Order</h3>
-                  <p className="text-[11px] text-slate-400">Execute minimum lot size verification order</p>
-                </div>
-              </div>
-              <button
-                onClick={() => { setTestOrderModalOpen(false); setTestOrderResult(null); }}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Target Broker Display */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
-              <span className="text-slate-400">Target Broker:</span>
-              <span className="font-bold text-emerald-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                {activeBrokerId || 'DELTA'} (Live Connected)
-              </span>
-            </div>
-
-            {/* Symbol Selector */}
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1.5">Select Instrument</label>
-              <div className="grid grid-cols-4 gap-2">
-                {['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'].map((sym) => (
-                  <button
-                    key={sym}
-                    type="button"
-                    onClick={() => setTestOrderSymbol(sym)}
-                    className={`py-2 text-xs font-mono font-bold rounded-xl border transition-all ${
-                      testOrderSymbol === sym
-                        ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    {sym.replace('USD', '')}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Side Toggle (BUY vs SELL) */}
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1.5">Order Side</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTestOrderSide('BUY')}
-                  className={`py-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
-                    testOrderSide === 'BUY'
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-lg shadow-emerald-500/20'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <ArrowUpRight className="w-4 h-4" /> BUY (Long)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTestOrderSide('SELL')}
-                  className={`py-2.5 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all ${
-                    testOrderSide === 'SELL'
-                      ? 'bg-rose-500 text-white border-rose-400 shadow-lg shadow-rose-500/20'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <ArrowDownRight className="w-4 h-4" /> SELL (Short)
-                </button>
-              </div>
-            </div>
-
-            {/* Minimum Lot Size Info */}
-            <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Order Size</span>
-                <span className="font-mono font-bold text-white">1 Contract (Min Lot)</span>
-              </div>
-              <div className="text-right">
-                <span className="text-slate-400 block text-[10px]">Order Type</span>
-                <span className="font-mono font-bold text-amber-400">MARKET</span>
-              </div>
-            </div>
-
-            {/* 100x Leverage Info */}
-            <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-500/50 flex items-center justify-between text-xs shadow-sm">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
-                <div>
-                  <span className="font-bold text-white block">Execution Leverage</span>
-                  <span className="text-[10px] text-purple-300">Fast test verification mode</span>
-                </div>
-              </div>
-              <span className="px-3 py-1 rounded-lg bg-purple-500/25 text-purple-200 border border-purple-500/50 font-black font-mono text-xs shadow">
-                100x Leverage
-              </span>
-            </div>
-
-            {/* Execution Mode */}
-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-              <span className="text-slate-300 font-medium">Execution Mode:</span>
-              <span className="px-3 py-1 rounded-lg font-bold text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                ⚡ 100% Real Live Money
-              </span>
-            </div>
-
-            {/* Result Message */}
-            {testOrderResult && (
-              <div className={`p-3 rounded-xl text-xs font-mono border ${
-                testOrderResult.success
-                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                  : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
-              }`}>
-                {testOrderResult.message}
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => { setTestOrderModalOpen(false); setTestOrderResult(null); }}
-                className="w-1/2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={handlePunchTestOrder}
-                disabled={isPunchingTestOrder || killSwitchActive}
-                className="w-1/2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isPunchingTestOrder ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>Punching...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4 text-slate-950" />
-                    <span>Punch Min Lot</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
