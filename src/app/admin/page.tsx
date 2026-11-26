@@ -230,6 +230,7 @@ export default function AdminPage() {
     const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
 
     try {
+      const capitalToUse = Math.max(100, Number(btCapital) || 100000);
       const res = await fetch('/api/admin/backtest', {
         method: 'POST',
         headers: {
@@ -241,7 +242,7 @@ export default function AdminPage() {
           symbol: btSymbol,
           timeframe: btTimeframe,
           days: btDays,
-          initialCapital: btCapital,
+          initialCapital: capitalToUse,
           perTradeRiskPct: btRiskPct,
           leverage: btLeverage,
           trailingEnabled: btTrailing,
@@ -568,7 +569,7 @@ export default function AdminPage() {
               </span>
             </div>
 
-            <form onSubmit={handleRunBacktest} className="space-y-5">
+            <form onSubmit={handleRunBacktest} noValidate className="space-y-5">
               {/* Step 1: Select Strategy */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -713,12 +714,13 @@ export default function AdminPage() {
                     <div className="relative">
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
                       <input
-                        type="number"
-                        min={1000}
-                        max={10000000}
-                        step={5000}
-                        value={btCapital}
-                        onChange={(e) => setBtCapital(Math.max(1000, Number(e.target.value) || 1000))}
+                        type="text"
+                        inputMode="numeric"
+                        value={btCapital > 0 ? btCapital.toString() : ''}
+                        onChange={(e) => {
+                          const cleanVal = e.target.value.replace(/[^0-9]/g, '');
+                          setBtCapital(cleanVal ? Number(cleanVal) : 0);
+                        }}
                         className="w-full pl-8 pr-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
                         placeholder="100000"
                       />

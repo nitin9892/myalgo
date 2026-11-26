@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       symbol: body.symbol || 'BTCUSD',
       timeframe: body.timeframe || '5m',
       days: Math.min(60, Math.max(1, Number(body.days || 7))),
-      initialCapital: Math.max(1000, Number(body.initialCapital || 100000)),
+      initialCapital: Math.max(100, Number(body.initialCapital || 100000)),
       perTradeRiskPct: Math.min(25, Math.max(0.5, Number(body.perTradeRiskPct || 5))),
       leverage: Number(body.leverage || 10),
       maxTradesPerDay: Number(body.maxTradesPerDay || 3),
