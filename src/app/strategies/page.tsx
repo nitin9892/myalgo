@@ -16,39 +16,64 @@ import {
   Plus,
   ArrowUpRight,
   ArrowDownRight,
-  Target
+  Target,
+  Wallet,
+  Power,
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 
 export default function StrategiesPage() {
-  // Step 1: Strategy A, B, or C (Strategy C is the 6 Setups Engine: PDH, PDL, PDC)
+  // Master Algo Active State
+  const [algoActive, setAlgoActive] = useState<boolean>(true);
+  const [isTogglingAlgo, setIsTogglingAlgo] = useState(false);
+
+  // Step 1: Broker A, B, or C
+  const [selectedBroker, setSelectedBroker] = useState<'DELTA' | 'DHAN' | 'METATRADER'>('DELTA');
+
+  // Step 2: Strategy A, B, or C (Strategy C is the 6 Setups Engine: PDH, PDL, PDC)
   const [selectedStrategy, setSelectedStrategy] = useState<'Strategy A' | 'Strategy B' | 'Strategy C'>('Strategy C');
   
-  // Step 2: Multiple Selected Instruments (BTC, ETH, SOL, XRP)
+  // Step 3: Multiple Selected Instruments
   const [selectedInstruments, setSelectedInstruments] = useState<string[]>(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
 
-  // Step 3: Daily Loss in %
+  // Step 4: Daily Loss in %
   const [dailyLossPct, setDailyLossPct] = useState<number>(15);
 
-  // Step 4: Per Trade Loss in %
+  // Step 5: Per Trade Loss in %
   const [perTradeRiskPct, setPerTradeRiskPct] = useState<number>(5);
 
-  // Step 5: Max 3 Trades a Day
+  // Step 6: Max 3 Trades a Day
   const [maxTradesPerDay] = useState<number>(3);
 
-  // Step 6: Leverage Mode & Manual Leverage
-  const [leverageMode, setLeverageMode] = useState<'MANUAL' | 'DYNAMIC'>('MANUAL');
+  // Step 7: Leverage Mode (Smart Balance Auto-Leverage vs Manual Leverage)
+  const [leverageMode, setLeverageMode] = useState<'DYNAMIC' | 'MANUAL'>('DYNAMIC');
   const [manualLeverage, setManualLeverage] = useState<number>(10);
 
   // State
   const [saving, setSaving] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const availableCoins = [
-    { id: 'BTCUSD', name: 'Bitcoin', tag: 'BTC' },
-    { id: 'ETHUSD', name: 'Ethereum', tag: 'ETH' },
-    { id: 'SOLUSD', name: 'Solana', tag: 'SOL' },
-    { id: 'XRPUSD', name: 'Ripple', tag: 'XRP' },
-  ] as const;
+  const brokerInstrumentsMap: Record<'DELTA' | 'DHAN' | 'METATRADER', { id: string; name: string; tag: string }[]> = {
+    DELTA: [
+      { id: 'BTCUSD', name: 'Bitcoin', tag: 'BTC' },
+      { id: 'ETHUSD', name: 'Ethereum', tag: 'ETH' },
+      { id: 'SOLUSD', name: 'Solana', tag: 'SOL' },
+      { id: 'XRPUSD', name: 'Ripple', tag: 'XRP' },
+    ],
+    DHAN: [
+      { id: 'NIFTY', name: 'Nifty 50 Futures', tag: 'NIFTY' },
+      { id: 'BANKNIFTY', name: 'Bank Nifty Futures', tag: 'BNF' },
+      { id: 'RELIANCE', name: 'Reliance Industries', tag: 'RELIANCE' },
+      { id: 'HDFCBANK', name: 'HDFC Bank Ltd', tag: 'HDFCBANK' },
+    ],
+    METATRADER: [
+      { id: 'EURUSD', name: 'EUR / USD Forex', tag: 'EURUSD' },
+      { id: 'GBPUSD', name: 'GBP / USD Forex', tag: 'GBPUSD' },
+      { id: 'XAUUSD', name: 'Gold / USD CFD', tag: 'XAUUSD' },
+      { id: 'USDJPY', name: 'USD / JPY Forex', tag: 'USDJPY' },
+    ],
+  };
 
   useEffect(() => {
     fetchActiveStrategy();
@@ -60,6 +85,12 @@ export default function StrategiesPage() {
       const data = await res.json();
       if (data.strategy) {
         const s = data.strategy;
+        if (s.is_active !== undefined) {
+          setAlgoActive(Boolean(s.is_active));
+        }
+        if (s.broker_name === 'DELTA' || s.broker_name === 'DHAN' || s.broker_name === 'METATRADER') {
+          setSelectedBroker(s.broker_name);
+        }
         if (s.name === 'Strategy A' || s.name === 'Strategy B' || s.name === 'Strategy C') {
           setSelectedStrategy(s.name);
         }
@@ -72,7 +103,7 @@ export default function StrategiesPage() {
         if (s.parameters?.daily_loss_pct) setDailyLossPct(s.parameters.daily_loss_pct);
         if (s.parameters?.per_trade_risk_pct) setPerTradeRiskPct(s.parameters.per_trade_risk_pct);
         if (s.parameters?.leverage_mode) {
-          setLeverageMode(s.parameters.leverage_mode.toUpperCase() === 'DYNAMIC' ? 'DYNAMIC' : 'MANUAL');
+          setLeverageMode(s.parameters.leverage_mode.toUpperCase() === 'MANUAL' ? 'MANUAL' : 'DYNAMIC');
         }
         if (s.parameters?.leverage) {
           setManualLeverage(Number(s.parameters.leverage) || 10);
@@ -80,6 +111,32 @@ export default function StrategiesPage() {
       }
     } catch (err) {
       console.error('Failed to load strategy:', err);
+    }
+  };
+
+  const handleSelectBroker = (brokerKey: 'DELTA' | 'DHAN' | 'METATRADER') => {
+    setSelectedBroker(brokerKey);
+    const defaults = brokerInstrumentsMap[brokerKey].map((c) => c.id);
+    setSelectedInstruments(defaults);
+  };
+
+  const handleToggleAlgoSwitch = async () => {
+    const nextState = !algoActive;
+    setIsTogglingAlgo(true);
+    try {
+      const res = await fetch('/api/strategies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: nextState }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAlgoActive(data.is_active);
+      }
+    } catch (err) {
+      console.error('Failed to toggle algo switch:', err);
+    } finally {
+      setIsTogglingAlgo(false);
     }
   };
 
@@ -95,10 +152,11 @@ export default function StrategiesPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedInstruments.length === 4) {
-      setSelectedInstruments(['BTCUSD']);
+    const available = brokerInstrumentsMap[selectedBroker];
+    if (selectedInstruments.length === available.length) {
+      setSelectedInstruments([available[0].id]);
     } else {
-      setSelectedInstruments(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
+      setSelectedInstruments(available.map((c) => c.id));
     }
   };
 
@@ -107,16 +165,16 @@ export default function StrategiesPage() {
     setSuccessMessage(null);
 
     const symbolsText = selectedInstruments.join(',');
-    const coinTags = selectedInstruments.map((s) => s.replace('USD', '')).join(', ');
+    const brokerNameLabel = selectedBroker === 'DELTA' ? 'Broker A (Delta)' : (selectedBroker === 'DHAN' ? 'Broker B (Dhan)' : 'Broker C (MetaTrader)');
 
     try {
       const res = await fetch('/api/strategies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: 'master-crypto-active',
+          id: 'master-strategy-active',
           name: selectedStrategy,
-          broker_name: 'DELTA',
+          broker_name: selectedBroker,
           symbol: symbolsText,
           symbols: selectedInstruments,
           dailyLossPct,
@@ -124,15 +182,15 @@ export default function StrategiesPage() {
           maxTradesPerDay: 3,
           leverageMode,
           leverage: manualLeverage,
-          is_active: true,
+          is_active: algoActive,
           paper_trading: false,
         }),
       });
 
       if (res.ok) {
-        const levLabel = leverageMode === 'MANUAL' ? `${manualLeverage}x Manual Leverage` : 'Dynamic Medium Leverage (5x-10x)';
-        setSuccessMessage(`Activated: ${selectedStrategy} on [${coinTags}] (${dailyLossPct}% Daily Loss, ${perTradeRiskPct}% Risk/Trade, Max 3 Trades/Day, ${levLabel})`);
-        setTimeout(() => setSuccessMessage(null), 4000);
+        const levLabel = leverageMode === 'MANUAL' ? `${manualLeverage}x Manual Leverage` : 'Smart Balance Auto-Leverage';
+        setSuccessMessage(`Activated: ${selectedStrategy} on ${brokerNameLabel} [${symbolsText}] (${dailyLossPct}% Daily Loss, ${perTradeRiskPct}% Risk/Trade, Max 3 Trades/Day, ${levLabel})`);
+        setTimeout(() => setSuccessMessage(null), 5000);
       }
     } catch (err: any) {
       console.error('Failed to save strategy:', err);
@@ -141,47 +199,132 @@ export default function StrategiesPage() {
     }
   };
 
+  const activeBrokerCoins = brokerInstrumentsMap[selectedBroker];
+
   return (
     <div className="space-y-6 sm:space-y-8 max-w-3xl">
-      {/* Header */}
+      {/* Header with Master Algo ON/OFF Switch */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Cpu className="w-6 h-6 text-emerald-400" />
-            Strategy Setup
+            Strategy & Broker Configuration
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Choose strategy, target instruments (multi-select enabled), and risk limits.
+            Configure Brokers A/B/C, Strategies A/B/C, smart balance-aware leverage, and risk limits.
           </p>
         </div>
 
-        {/* Live Execution Indicator */}
-        <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 self-start sm:self-auto text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="font-bold text-emerald-400">100% Real Live Trading</span>
+        <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+          {/* Master Algo ON/OFF Switch */}
+          <button
+            type="button"
+            onClick={handleToggleAlgoSwitch}
+            disabled={isTogglingAlgo}
+            className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-black transition-all shadow-md active:scale-95 disabled:opacity-50 ${
+              algoActive
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700'
+            }`}
+            title={algoActive ? 'Click to Pause Algo' : 'Click to Turn Algo ON'}
+          >
+            <div className={`w-7 h-4 rounded-full transition-colors relative flex items-center p-0.5 ${
+              algoActive ? 'bg-emerald-500' : 'bg-slate-600'
+            }`}>
+              <div className={`w-3 h-3 rounded-full bg-white transition-transform ${
+                algoActive ? 'translate-x-3' : 'translate-x-0'
+              }`} />
+            </div>
+            <span>{algoActive ? 'ALGO ON' : 'ALGO PAUSED'}</span>
+          </button>
+
+          {/* Live Execution Indicator */}
+          <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-xl border border-slate-800 text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="font-bold text-emerald-400">100% Real Live Trading</span>
+          </div>
         </div>
       </div>
 
       {/* Success Notification */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 shadow-lg">
+        <div className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2 shadow-lg animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{successMessage}</span>
         </div>
       )}
 
-      {/* STEP 1: Select Strategy (A, B, or C) */}
+      {/* STEP 1: Select Broker (Broker A, Broker B, Broker C) */}
       <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
-        <div className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">1</span>
-          <h2 className="text-base font-bold text-white">Select Strategy</h2>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center text-xs font-bold">1</span>
+            <div>
+              <h2 className="text-base font-bold text-white">Select Broker (A, B, or C)</h2>
+              <p className="text-[11px] text-slate-400">Route strategy execution through your designated broker</p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-lg border border-purple-500/20">
+            Active: {selectedBroker}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {([
-            { id: 'Strategy A', label: 'Strategy A', tag: 'Slot A (Pending)' },
-            { id: 'Strategy B', label: 'Strategy B', tag: 'Slot B (Pending)' },
-            { id: 'Strategy C', label: 'Strategy C', tag: '🔥 6 Setups Engine (Active)' },
+            { id: 'DELTA' as const, code: 'Broker A', name: 'Delta Exchange', tag: 'Crypto Derivatives (BTC, ETH, SOL, XRP)' },
+            { id: 'DHAN' as const, code: 'Broker B', name: 'DhanHQ API', tag: 'Indian Markets (NSE, Nifty, BNF)' },
+            { id: 'METATRADER' as const, code: 'Broker C', name: 'MetaTrader 5', tag: 'Forex, Gold CFDs & Bridge' },
+          ]).map((b) => {
+            const isSelected = selectedBroker === b.id;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => handleSelectBroker(b.id)}
+                className={`p-4 rounded-xl text-left border transition-all flex flex-col justify-between gap-2 ${
+                  isSelected
+                    ? 'bg-purple-500/20 text-purple-200 border-purple-500 shadow-lg shadow-purple-500/20'
+                    : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${
+                    isSelected ? 'bg-purple-500/40 text-purple-200' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {b.code}
+                  </span>
+                  {isSelected && <Check className="w-4 h-4 text-purple-400 stroke-[3]" />}
+                </div>
+                <div>
+                  <div className="font-bold text-sm text-white">{b.name}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">{b.tag}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* STEP 2: Select Strategy (A, B, or C) */}
+      <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">2</span>
+            <div>
+              <h2 className="text-base font-bold text-white">Select Strategy (A, B, or C)</h2>
+              <p className="text-[11px] text-slate-400">Choose active algo model for execution</p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+            Selected: {selectedStrategy}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {([
+            { id: 'Strategy A', label: 'Strategy A', tag: 'Slot A: Trend Breakout' },
+            { id: 'Strategy B', label: 'Strategy B', tag: 'Slot B: Mean Reversion' },
+            { id: 'Strategy C', label: 'Strategy C', tag: '🔥 6 Setups Engine (Active Core)' },
           ] as const).map((strat) => {
             const isSelected = selectedStrategy === strat.id;
             return (
@@ -210,14 +353,14 @@ export default function StrategiesPage() {
         </div>
       </div>
 
-      {/* STEP 2: Select Instruments (Multiple Selection Enabled) */}
+      {/* STEP 3: Select Instruments (Multiple Selection Enabled) */}
       <div className="p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs font-bold">2</span>
+            <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs font-bold">3</span>
             <div>
-              <h2 className="text-base font-bold text-white">Select Instruments (Multiple)</h2>
-              <p className="text-[11px] text-slate-400">Tap to toggle any coin. Strategy will scan all selected coins.</p>
+              <h2 className="text-base font-bold text-white">Select Instruments ({selectedBroker})</h2>
+              <p className="text-[11px] text-slate-400">Multi-select enabled. Algo scans all selected instruments simultaneously.</p>
             </div>
           </div>
 
@@ -226,12 +369,12 @@ export default function StrategiesPage() {
             onClick={toggleSelectAll}
             className="text-xs text-cyan-400 hover:text-cyan-300 px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 font-semibold"
           >
-            {selectedInstruments.length === 4 ? 'Reset to 1' : 'Select All 4'}
+            {selectedInstruments.length === activeBrokerCoins.length ? 'Reset to 1' : `Select All ${activeBrokerCoins.length}`}
           </button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {availableCoins.map((coin) => {
+          {activeBrokerCoins.map((coin) => {
             const isSelected = selectedInstruments.includes(coin.id);
             return (
               <button
@@ -260,20 +403,20 @@ export default function StrategiesPage() {
         </div>
 
         <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <span>Active Scanner Instruments:</span>
+          <span>Active Scanner Targets:</span>
           <span className="font-bold font-mono text-cyan-400">
-            {selectedInstruments.map((s) => s.replace('USD', '')).join(', ')} ({selectedInstruments.length}/4)
+            {selectedInstruments.join(', ')} ({selectedInstruments.length}/{activeBrokerCoins.length})
           </span>
         </div>
       </div>
 
-      {/* STEP 3 & 4: Daily Loss % and Per-Trade Loss % */}
+      {/* STEP 4 & 5: Daily Loss % and Per-Trade Loss % */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Daily Loss in % */}
         <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center text-xs font-bold">3</span>
+              <span className="w-6 h-6 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center text-xs font-bold">4</span>
               <label className="text-xs font-bold text-slate-200">Daily Loss in %</label>
             </div>
             <span className="text-lg font-black font-mono text-rose-400">{dailyLossPct}%</span>
@@ -300,7 +443,7 @@ export default function StrategiesPage() {
         <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3 shadow-xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs font-bold">4</span>
+              <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-xs font-bold">5</span>
               <label className="text-xs font-bold text-slate-200">Per Trade Loss in %</label>
             </div>
             <span className="text-lg font-black font-mono text-cyan-400">{perTradeRiskPct}%</span>
@@ -324,13 +467,13 @@ export default function StrategiesPage() {
         </div>
       </div>
 
-      {/* STEP 5: Max 3 Trades a Day */}
+      {/* STEP 6: Max 3 Trades a Day */}
       <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-2.5">
-          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">5</span>
+          <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xs font-bold">6</span>
           <div>
             <span className="text-xs font-bold text-white">Max Trades a Day</span>
-            <p className="text-[11px] text-slate-400">Strict ceiling per 24hr cycle (resets 01:00 AM IST)</p>
+            <p className="text-[11px] text-slate-400">Strict ceiling per 24hr cycle (resets 01:00 AM IST daily)</p>
           </div>
         </div>
         <span className="px-3 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-black text-sm">
@@ -338,19 +481,31 @@ export default function StrategiesPage() {
         </span>
       </div>
 
-      {/* STEP 6: Leverage Mode (Manual Leverage Option vs Dynamic Medium) */}
-      <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4 shadow-md">
+      {/* STEP 7: Leverage Mode (Smart Balance Auto-Leverage vs Manual Leverage) */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-xs font-bold">6</span>
+            <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-xs font-bold">7</span>
             <div>
-              <span className="text-xs font-bold text-white">Leverage Mode & Multiplier</span>
-              <p className="text-[11px] text-slate-400">Choose custom manual leverage or auto dynamic medium mode</p>
+              <span className="text-xs font-bold text-white">Leverage Management Engine</span>
+              <p className="text-[11px] text-slate-400">Smart balance-aware auto leverage or manual fixed multiplier</p>
             </div>
           </div>
 
           {/* Mode Switcher Tabs */}
           <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setLeverageMode('DYNAMIC')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                leverageMode === 'DYNAMIC'
+                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Smart Auto (Balance-Aware)
+            </button>
             <button
               type="button"
               onClick={() => setLeverageMode('MANUAL')}
@@ -360,23 +515,56 @@ export default function StrategiesPage() {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Manual Leverage
-            </button>
-            <button
-              type="button"
-              onClick={() => setLeverageMode('DYNAMIC')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                leverageMode === 'DYNAMIC'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Dynamic Medium (5x-10x)
+              Manual Fixed
             </button>
           </div>
         </div>
 
-        {leverageMode === 'MANUAL' ? (
+        {leverageMode === 'DYNAMIC' ? (
+          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-xs font-bold text-amber-300">Smart Capital & Risk-Aware Auto-Leverage</span>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono font-black text-xs border border-emerald-500/30">
+                Active Dynamic
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Algo dynamically adapts leverage on every order based on live account balance and Stop Loss distance:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
+              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                <div className="text-slate-400 text-[10px]">CAPITAL &lt; ₹25,000</div>
+                <div className="font-bold text-amber-400 mt-0.5">5x – 10x Max</div>
+                <div className="text-[10px] text-slate-500">Conservative safety mode</div>
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                <div className="text-slate-400 text-[10px]">₹25k – ₹1,00,000</div>
+                <div className="font-bold text-cyan-400 mt-0.5">10x – 20x Max</div>
+                <div className="text-[10px] text-slate-500">Balanced growth mode</div>
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                <div className="text-slate-400 text-[10px]">CAPITAL &gt; ₹1,00,000</div>
+                <div className="font-bold text-emerald-400 mt-0.5">25x – 50x Max</div>
+                <div className="text-[10px] text-slate-500">Capital-efficient mode</div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-300 space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-amber-200">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>Liquidation Distance Protection (Strict Rule)</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                Liquidation price is mathematically guaranteed to be at least <strong>3.5x further</strong> than your Stop Loss distance. If SL is 2%, max allowed leverage is capped to 14x, preventing liquidation before SL triggers.
+              </p>
+            </div>
+          </div>
+        ) : (
           <div className="space-y-3.5 pt-3 border-t border-slate-800/80">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-300">Selected Manual Leverage:</span>
@@ -389,7 +577,7 @@ export default function StrategiesPage() {
             <div>
               <label className="text-[11px] text-slate-400 mb-1.5 block font-medium">Quick Select Presets:</label>
               <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                {[2, 3, 5, 10, 15, 20, 25, 50].map((lev) => (
+                {[2, 5, 10, 15, 20, 25, 50, 100].map((lev) => (
                   <button
                     key={lev}
                     type="button"
@@ -411,7 +599,7 @@ export default function StrategiesPage() {
               <input
                 type="range"
                 min="1"
-                max="50"
+                max="100"
                 step="1"
                 value={manualLeverage}
                 onChange={(e) => setManualLeverage(Number(e.target.value))}
@@ -420,24 +608,12 @@ export default function StrategiesPage() {
               <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
                 <span>1x (Min)</span>
                 <span className="text-amber-400 font-semibold">10x Default</span>
-                <span>50x (Max)</span>
+                <span>100x (Max)</span>
               </div>
             </div>
 
             <p className="text-[11px] text-slate-400 bg-slate-950/70 p-3 rounded-xl border border-slate-800/80 leading-relaxed">
               ⚡ Orders will be executed directly with fixed <strong className="text-amber-400 font-bold">{manualLeverage}x</strong> leverage. Margin requirement is calculated on entry size divided by {manualLeverage}.
-            </p>
-          </div>
-        ) : (
-          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-amber-300">Dynamic Medium Leverage Engine</span>
-              <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-400 font-black text-xs border border-amber-500/30">
-                5x – 10x Auto Scaled
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Leverage is dynamically calculated on every trade based on entry price and distance to signal candle stop loss. Tighter stops get up to 10x leverage; wider stops are auto-reduced to 5x-3x to strictly safeguard capital.
             </p>
           </div>
         )}
@@ -544,7 +720,7 @@ export default function StrategiesPage() {
           ) : (
             <>
               <Check className="w-5 h-5 text-slate-950 stroke-[3]" />
-              Save & Activate {selectedStrategy} on [{selectedInstruments.map((s) => s.replace('USD', '')).join(', ')}]
+              Save & Activate {selectedStrategy} on {selectedBroker === 'DELTA' ? 'Broker A (Delta)' : (selectedBroker === 'DHAN' ? 'Broker B (Dhan)' : 'Broker C (MetaTrader)')} [{selectedInstruments.join(', ')}]
             </>
           )}
         </button>

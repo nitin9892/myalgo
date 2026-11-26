@@ -22,6 +22,7 @@ import {
 
 interface BrokerConfig {
   id: 'DHAN' | 'DELTA' | 'METATRADER';
+  code: 'Broker A' | 'Broker B' | 'Broker C';
   name: string;
   title: string;
   badge: string;
@@ -37,6 +38,7 @@ export default function BrokersPage() {
   const [testingBroker, setTestingBroker] = useState<string | null>(null);
   const [firingOrder, setFiringOrder] = useState<string | null>(null);
   const [showEditCredentials, setShowEditCredentials] = useState(false);
+  const [showAllBrokers, setShowAllBrokers] = useState(false);
   const [selectedCryptoSymbol, setSelectedCryptoSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'XRPUSD'>('BTCUSD');
 
   const [testStatus, setTestStatus] = useState<Record<string, {
@@ -117,7 +119,8 @@ export default function BrokersPage() {
   const brokers: BrokerConfig[] = [
     {
       id: 'DELTA',
-      name: 'Delta Exchange (Crypto Derivatives)',
+      code: 'Broker A',
+      name: 'Broker A: Delta Exchange (Crypto Derivatives)',
       title: 'Direct Crypto Futures with HMAC Signing (BTC, ETH, SOL, XRP)',
       badge: 'BTC • ETH • SOL • XRP',
       defaultSymbol: 'BTCUSD',
@@ -132,7 +135,8 @@ export default function BrokersPage() {
     },
     {
       id: 'DHAN',
-      name: 'DhanHQ API (Indian Markets)',
+      code: 'Broker B',
+      name: 'Broker B: DhanHQ API (Indian Markets)',
       title: 'NSE / BSE Equity & F&O Execution',
       badge: 'NSE / NIFTY / BANKNIFTY',
       defaultSymbol: 'IDEA',
@@ -146,7 +150,8 @@ export default function BrokersPage() {
     },
     {
       id: 'METATRADER',
-      name: 'MetaTrader 5 (MT5 Bridge & Cloud)',
+      code: 'Broker C',
+      name: 'Broker C: MetaTrader 5 (MT5 Bridge & Cloud)',
       title: 'Direct IPC Execution (<50ms) or Cloud REST API',
       badge: 'EURUSD / XAUUSD / US30',
       defaultSymbol: 'EURUSD',
@@ -262,7 +267,7 @@ export default function BrokersPage() {
 
   // Check if any broker is actively connected
   const connectedBroker = brokers.find((b) => testStatus[b.id]?.success);
-  const displayedBrokers = connectedBroker ? [connectedBroker] : brokers;
+  const displayedBrokers = (connectedBroker && !showAllBrokers) ? [connectedBroker] : brokers;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -271,17 +276,28 @@ export default function BrokersPage() {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Wallet className="w-6 h-6 text-emerald-400" />
-            Broker Integration
+            Broker Integration (Brokers A, B, C)
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Connect your broker account. Once connected, your active broker displays green and is ready for trading.
+            Broker A (Delta Crypto), Broker B (Dhan Indian Markets), Broker C (MetaTrader Forex/CFDs).
           </p>
         </div>
 
-        {/* Live Execution Indicator */}
-        <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span className="font-bold text-emerald-400">100% Real Live Money</span>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {connectedBroker && (
+            <button
+              onClick={() => setShowAllBrokers(!showAllBrokers)}
+              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all shadow-sm"
+            >
+              {showAllBrokers ? 'Show Connected Only' : 'Switch / View All Brokers (A, B, C)'}
+            </button>
+          )}
+
+          {/* Live Execution Indicator */}
+          <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto text-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="font-bold text-emerald-400">100% Real Live Money</span>
+          </div>
         </div>
       </div>
 

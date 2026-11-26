@@ -124,6 +124,59 @@ export function calculateDynamicPositionSize(
 }
 
 /**
+ * Smart Balance-Aware Leverage Calculator
+ *
+ * Dynamically computes optimal leverage according to:
+ * 1. Account Wallet Balance (conservative for smaller balance, optimal for healthy balance)
+ * 2. Stop Loss Distance % (guarantees liquidation distance is at least 3.5x further than SL)
+ * 3. Asset & Broker limits (Delta: 50x-100x max, Dhan: 5x max, MT5: 30x max)
+ */
+export function calculateSmartLeverage(
+  walletBalance: number,
+  entryPrice: number,
+  stopLossPrice: number,
+  broker: BrokerType,
+  symbol: string
+): { leverage: number; reason: string } {
+  const safeEntry = Math.max(1, entryPrice);
+  const slDist = Math.max(0.5, Math.abs(entryPrice - stopLossPrice));
+  const slPct = (slDist / safeEntry) * 100;
+
+  // 1. Liquidation distance protection (ensures liquidation price is at least 3.5x further than SL)
+  const maxSafeFromSL = Math.max(2, Math.floor(100 / (Math.max(0.2, slPct) * 3.5)));
+
+  // 2. Account Balance scaling
+  let balanceCap = 25;
+  if (walletBalance < 25000) {
+    // Smaller account: strictly conservative
+    balanceCap = 10;
+  } else if (walletBalance < 100000) {
+    // Medium account: balanced leverage
+    balanceCap = 20;
+  } else {
+    // Healthy capital: allows higher efficiency
+    balanceCap = 50;
+  }
+
+  // 3. Broker & Asset ceilings
+  let brokerMax = 50;
+  const sym = symbol.toUpperCase();
+  if (broker === 'DELTA') {
+    brokerMax = (sym.includes('BTC') || sym.includes('ETH')) ? 100 : 50;
+  } else if (broker === 'DHAN') {
+    brokerMax = 5; // Regulatory intraday limit
+  } else if (broker === 'METATRADER') {
+    brokerMax = 30;
+  }
+
+  // Final Smart Leverage
+  const finalLeverage = Math.max(2, Math.min(brokerMax, maxSafeFromSL, balanceCap));
+  const reason = `Smart Leverage: ${finalLeverage}x (SL: ${slPct.toFixed(2)}% | Balance: ₹${Math.round(walletBalance).toLocaleString('en-IN')})`;
+
+  return { leverage: finalLeverage, reason };
+}
+
+/**
  * Fetch risk settings from database or in-memory runtime cache
  */
 export async function getRiskConfiguration(): Promise<RiskSettings> {

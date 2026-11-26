@@ -5,6 +5,7 @@ import {
   getRiskConfiguration, 
   evaluateDailyLossAndKillSwitch, 
   calculateDynamicPositionSize,
+  calculateSmartLeverage,
   getISTCycleStartTime
 } from '../risk/engine';
 import { BrokerType, OrderRequest } from '../brokers/types';
@@ -139,7 +140,7 @@ export async function runTradingEngineCycle() {
       const { data } = await supabase
         .from('strategies')
         .select('*')
-        .eq('is_active', true)
+        .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -150,7 +151,7 @@ export async function runTradingEngineCycle() {
           broker_name: (data.broker_name as BrokerType) || DEFAULT_MASTER_STRATEGY.broker_name,
           symbol: data.symbol || DEFAULT_MASTER_STRATEGY.symbol,
           timeframe: data.timeframe || '5m',
-          is_active: data.is_active ?? true,
+          is_active: data.is_active !== undefined ? Boolean(data.is_active) : true,
           paper_trading: false,
           params: { ...DEFAULT_MASTER_STRATEGY.params, ...(data.parameters || {}) },
         };
@@ -160,8 +161,8 @@ export async function runTradingEngineCycle() {
     }
 
     if (!masterStrategy.is_active) {
-      logs.push(`Master strategy [${masterStrategy.name}] is currently PAUSED.`);
-      return { success: true, count: 0, logs };
+      logs.push(`⚪ ALGO SWITCH IS OFF: Master strategy [${masterStrategy.name}] is currently PAUSED. Turn switch ON from Dashboard to resume automated trading.`);
+      return { success: true, count: 0, logs, algoPaused: true };
     }
 
     // ------------------------------------------------------------------------
@@ -334,18 +335,24 @@ export async function runTradingEngineCycle() {
       const takeProfit = evalRes.target || 0;
       const slPoints = evalRes.slPoints || Math.abs(entryPrice - stopLoss);
 
-      // Leverage calculation: Check if user selected MANUAL or DYNAMIC mode
-      const isDynamic = String(p.leverage_mode || '').toUpperCase() === 'DYNAMIC';
+      // Smart Leverage calculation based on live wallet balance & Stop Loss distance
+      const isManual = String(p.leverage_mode || '').toUpperCase() === 'MANUAL';
       let appliedLeverage: number;
+      let levTag = '';
 
-      if (isDynamic) {
-        // Dynamic Medium Leverage based on Entry & Stop Loss distance
-        const slDist = Math.max(0.5, slPoints);
-        const slPct = (slDist / Math.max(1, entryPrice)) * 100;
-        appliedLeverage = Math.max(3, Math.min(10, Math.round(50 / Math.max(2, slPct))));
-      } else {
-        // Manual Leverage option chosen by user (e.g. 2x, 5x, 10x, 25x, 50x)
+      if (isManual) {
         appliedLeverage = Math.max(1, Math.min(100, Number(p.leverage) || 10));
+        levTag = `Manual Leverage: ${appliedLeverage}x`;
+      } else {
+        const smart = calculateSmartLeverage(
+          riskConfig.walletBalance,
+          entryPrice,
+          stopLoss,
+          masterStrategy.broker_name,
+          activeSymbol
+        );
+        appliedLeverage = smart.leverage;
+        levTag = smart.reason;
       }
 
       // Dynamic Lot Sizing based on risk % and SL distance in points
@@ -371,7 +378,6 @@ export async function runTradingEngineCycle() {
 
       if (orderResult.success) {
         const setupTag = evalRes.setupName ? `[${evalRes.setupName}]` : '[Breakout Engine]';
-        const levTag = isDynamic ? `Dynamic Medium Leverage: ${appliedLeverage}x` : `Manual Leverage: ${appliedLeverage}x`;
         await supabase.from('trades').insert({
           strategy_id: masterStrategy.id,
           broker_name: masterStrategy.broker_name,

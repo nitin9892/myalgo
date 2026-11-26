@@ -21,7 +21,8 @@ import {
   ArrowRight,
   Send,
   X,
-  Check
+  Check,
+  Power
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -81,6 +82,10 @@ export default function DashboardPage() {
   const [connectedBrokers, setConnectedBrokers] = useState<Record<string, any>>({});
   const [isSyncingBalance, setIsSyncingBalance] = useState(false);
   const [lastBalanceSyncTime, setLastBalanceSyncTime] = useState<string>('');
+
+  // Master Algo ON / OFF Switch State
+  const [algoActive, setAlgoActive] = useState<boolean>(true);
+  const [isTogglingAlgo, setIsTogglingAlgo] = useState(false);
 
   // Live real-time balance auto-sync from broker API
   const syncLiveBrokerBalance = async () => {
@@ -162,16 +167,19 @@ export default function DashboardPage() {
         }
       }
 
-      // 3. Fetch active strategy info
+      // 3. Fetch active strategy info & master algo switch state
       const stratRes = await fetch('/api/strategies');
       const stratData = await stratRes.json();
       if (stratData.success && stratData.strategy) {
         const s = stratData.strategy;
+        if (s.is_active !== undefined) {
+          setAlgoActive(Boolean(s.is_active));
+        }
         const syms = s.parameters?.symbols 
           ? s.parameters.symbols.map((x: string) => x.replace('USD', '')) 
           : (s.symbol ? s.symbol.split(',').map((x: string) => x.trim().replace('USD', '')) : ['BTC', 'ETH', 'SOL', 'XRP']);
         setActiveStrategyInfo({
-          name: s.name || 'Strategy A',
+          name: s.name || 'Strategy C',
           symbols: syms,
         });
       }
@@ -241,6 +249,28 @@ export default function DashboardPage() {
       setCycleResult({ error: err.message });
     } finally {
       setIsRunningCycle(false);
+    }
+  };
+
+  // Master Algo ON / OFF Switch Handler
+  const handleToggleAlgoSwitch = async () => {
+    const nextState = !algoActive;
+    setIsTogglingAlgo(true);
+    try {
+      const res = await fetch('/api/strategies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: nextState }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAlgoActive(data.is_active);
+      }
+      await fetchDashboardData();
+    } catch (err) {
+      console.error('Failed to toggle master algo switch:', err);
+    } finally {
+      setIsTogglingAlgo(false);
     }
   };
 
@@ -398,6 +428,39 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          {/* Master Algo ON/OFF Switch */}
+          <button
+            onClick={handleToggleAlgoSwitch}
+            disabled={isTogglingAlgo}
+            className={`flex items-center justify-between sm:justify-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs font-black transition-all shadow-md active:scale-95 disabled:opacity-50 ${
+              algoActive
+                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                : 'bg-slate-800/90 hover:bg-slate-800 text-slate-400 border-slate-700'
+            }`}
+            title={algoActive ? 'Click to Pause Algo (Master Switch)' : 'Click to Turn Algo ON (Master Switch)'}
+          >
+            <div className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+              algoActive ? 'bg-emerald-500' : 'bg-slate-600'
+            }`}>
+              <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform ${
+                algoActive ? 'translate-x-3.5' : 'translate-x-0'
+              }`} />
+            </div>
+            <span className="flex items-center gap-1.5">
+              {algoActive ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>ALGO ON</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  <span className="text-amber-400">ALGO PAUSED</span>
+                </>
+              )}
+            </span>
+          </button>
+
           {/* Minimum Lot Test Order Button */}
           <button
             onClick={() => setTestOrderModalOpen(true)}
@@ -486,6 +549,26 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* Master Algo PAUSED Alert Banner */}
+      {!algoActive && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-amber-950/80 border border-amber-500/50 text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xl">
+          <div className="flex items-start sm:items-center gap-3">
+            <Power className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <p className="font-black text-sm text-amber-200 tracking-wide">⚪ MASTER ALGO IS PAUSED</p>
+              <p className="text-xs text-amber-300/80 mt-0.5">Automated signal evaluation and order execution are currently halted. Click &quot;Turn Algo ON&quot; to resume trading.</p>
+            </div>
+          </div>
+          <button
+            onClick={handleToggleAlgoSwitch}
+            disabled={isTogglingAlgo}
+            className="w-full sm:w-auto text-center px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs transition-all shadow-md active:scale-95 shrink-0"
+          >
+            Turn Algo ON 🟢
+          </button>
+        </div>
+      )}
 
       {/* Kill Switch Triggered Alert Banner (Direct Disarm on Dashboard) */}
       {killSwitchActive && (
