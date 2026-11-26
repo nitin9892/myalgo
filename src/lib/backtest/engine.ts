@@ -53,77 +53,213 @@ export interface BacktestResult {
 }
 
 /**
- * Normalizes symbol to standard coin representation
+ * Normalizes symbol to standard coin representation across Delta, Binance and Coinbase
  */
-export function normalizeSymbol(raw: string): { deltaSym: string; binanceSym: string } {
+export function normalizeSymbol(raw: string): { deltaSym: string; binanceSym: string; coinbaseSym: string } {
   let s = raw.toUpperCase().trim().replace('/', '');
-  if (s === 'BTC' || s === 'BTCUSDT' || s === 'BTCUSD') return { deltaSym: 'BTCUSD', binanceSym: 'BTCUSDT' };
-  if (s === 'ETH' || s === 'ETHUSDT' || s === 'ETHUSD') return { deltaSym: 'ETHUSD', binanceSym: 'ETHUSDT' };
-  if (s === 'SOL' || s === 'SOLUSDT' || s === 'SOLUSD' || s === 'SPL' || s === 'SPLUSD') return { deltaSym: 'SOLUSD', binanceSym: 'SOLUSDT' };
-  if (s === 'XRP' || s === 'XRPUSDT' || s === 'XRPUSD') return { deltaSym: 'XRPUSD', binanceSym: 'XRPUSDT' };
-  return { deltaSym: s, binanceSym: `${s.replace('USD', '')}USDT` };
+  if (s === 'BTC' || s === 'BTCUSDT' || s === 'BTCUSD') return { deltaSym: 'BTCUSD', binanceSym: 'BTCUSDT', coinbaseSym: 'BTC-USD' };
+  if (s === 'ETH' || s === 'ETHUSDT' || s === 'ETHUSD') return { deltaSym: 'ETHUSD', binanceSym: 'ETHUSDT', coinbaseSym: 'ETH-USD' };
+  if (s === 'SOL' || s === 'SOLUSDT' || s === 'SOLUSD' || s === 'SPL' || s === 'SPLUSD') return { deltaSym: 'SOLUSD', binanceSym: 'SOLUSDT', coinbaseSym: 'SOL-USD' };
+  if (s === 'XRP' || s === 'XRPUSDT' || s === 'XRPUSD') return { deltaSym: 'XRPUSD', binanceSym: 'XRPUSDT', coinbaseSym: 'XRP-USD' };
+  return { deltaSym: s, binanceSym: `${s.replace('USD', '')}USDT`, coinbaseSym: `${s.replace('USD', '')}-USD` };
 }
 
 /**
- * Fetches 100% REAL historical candles from Binance API with chunking support
+ * Fetches 100% REAL historical candles with multi-tier provider failover:
+ * 1. Delta Exchange India (Primary live broker feed - fast, unblocked)
+ * 2. Delta Exchange Global
+ * 3. Binance Vision Public Data Mirror (Unblocked API mirror)
+ * 4. Binance Main API (with chunking)
+ * 5. Coinbase Public API
  */
 export async function fetchRealHistoricalCandles(
   symbol: string,
   timeframe: string = '5m',
   days: number = 7
 ): Promise<{ candles: Candle[]; source: string }> {
-  const { binanceSym } = normalizeSymbol(symbol);
+  const { deltaSym, binanceSym, coinbaseSym } = normalizeSymbol(symbol);
   const now = Date.now();
   const startTime = now - days * 24 * 60 * 60 * 1000;
+  const toSec = Math.floor(now / 1000);
+  const fromSec = Math.floor(startTime / 1000);
 
-  // Calculate number of chunks needed (1000 candles per request)
-  const minutesPerCandle = timeframe === '5m' ? 5 : (timeframe === '15m' ? 15 : 60);
-  const totalExpectedCandles = Math.floor((days * 24 * 60) / minutesPerCandle);
-  const chunksCount = Math.min(6, Math.max(1, Math.ceil(totalExpectedCandles / 900)));
+  // Map resolution for Delta Exchange
+  const deltaResolution = timeframe === '5m' ? '5' : (timeframe === '15m' ? '15' : (timeframe === '1h' ? '60' : '5'));
 
-  const chunkDurationMs = Math.floor((now - startTime) / chunksCount);
-  const allCandlesMap = new Map<number, Candle>();
-
+  // -------------------------------------------------------------------------
+  // 1. PROVIDER 1: DELTA EXCHANGE INDIA (Primary Live Broker feed)
+  // -------------------------------------------------------------------------
   try {
-    for (let c = 0; c < chunksCount; c++) {
-      const chunkStart = startTime + c * chunkDurationMs;
-      const chunkEnd = c === chunksCount - 1 ? now : startTime + (c + 1) * chunkDurationMs;
+    const deltaIndiaUrl = `https://api.india.delta.exchange/v2/chart/history?symbol=${deltaSym}&resolution=${deltaResolution}&from=${fromSec}&to=${toSec}`;
+    const res = await fetch(deltaIndiaUrl, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MyAlgo/1.0',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(9000),
+    });
 
-      const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=${timeframe}&limit=1000&startTime=${chunkStart}&endTime=${chunkEnd}`;
-      const res = await fetch(binanceUrl, { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.result && data.result.t && data.result.t.length > 30) {
+        const candles: Candle[] = [];
+        for (let i = 0; i < data.result.t.length; i++) {
+          candles.push({
+            timestamp: Number(data.result.t[i]) * 1000,
+            open: parseFloat(data.result.o[i]),
+            high: parseFloat(data.result.h[i]),
+            low: parseFloat(data.result.l[i]),
+            close: parseFloat(data.result.c[i]),
+            volume: parseFloat(data.result.v?.[i] || 0),
+          });
+        }
+        candles.sort((a, b) => a.timestamp - b.timestamp);
+        return {
+          candles,
+          source: `Delta Exchange India Live Feed (${deltaSym})`,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('Delta India chart history fallback:', err.message);
+  }
 
-      if (res.ok) {
-        const rawKlines = await res.json();
-        if (Array.isArray(rawKlines)) {
-          for (const k of rawKlines) {
-            const ts = Number(k[0]);
-            if (!allCandlesMap.has(ts)) {
-              allCandlesMap.set(ts, {
-                timestamp: ts,
-                open: parseFloat(k[1]),
-                high: parseFloat(k[2]),
-                low: parseFloat(k[3]),
-                close: parseFloat(k[4]),
-                volume: parseFloat(k[5]),
-              });
+  // -------------------------------------------------------------------------
+  // 2. PROVIDER 2: DELTA EXCHANGE GLOBAL
+  // -------------------------------------------------------------------------
+  try {
+    const deltaGlobalUrl = `https://api.delta.exchange/v2/chart/history?symbol=${deltaSym}&resolution=${deltaResolution}&from=${fromSec}&to=${toSec}`;
+    const res = await fetch(deltaGlobalUrl, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) MyAlgo/1.0',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(9000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.result && data.result.t && data.result.t.length > 30) {
+        const candles: Candle[] = [];
+        for (let i = 0; i < data.result.t.length; i++) {
+          candles.push({
+            timestamp: Number(data.result.t[i]) * 1000,
+            open: parseFloat(data.result.o[i]),
+            high: parseFloat(data.result.h[i]),
+            low: parseFloat(data.result.l[i]),
+            close: parseFloat(data.result.c[i]),
+            volume: parseFloat(data.result.v?.[i] || 0),
+          });
+        }
+        candles.sort((a, b) => a.timestamp - b.timestamp);
+        return {
+          candles,
+          source: `Delta Exchange Global Feed (${deltaSym})`,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('Delta Global chart history fallback:', err.message);
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. PROVIDER 3: BINANCE PUBLIC DATA (Vision Mirror & Main API)
+  // -------------------------------------------------------------------------
+  const binanceBases = [
+    'https://data-api.binance.vision/api/v3/klines',
+    'https://api.binance.com/api/v3/klines',
+    'https://api1.binance.com/api/v3/klines',
+  ];
+
+  for (const baseUrl of binanceBases) {
+    try {
+      const minutesPerCandle = timeframe === '5m' ? 5 : (timeframe === '15m' ? 15 : 60);
+      const totalExpectedCandles = Math.floor((days * 24 * 60) / minutesPerCandle);
+      const chunksCount = Math.min(6, Math.max(1, Math.ceil(totalExpectedCandles / 900)));
+      const chunkDurationMs = Math.floor((now - startTime) / chunksCount);
+      const allCandlesMap = new Map<number, Candle>();
+
+      for (let c = 0; c < chunksCount; c++) {
+        const chunkStart = startTime + c * chunkDurationMs;
+        const chunkEnd = c === chunksCount - 1 ? now : startTime + (c + 1) * chunkDurationMs;
+        const url = `${baseUrl}?symbol=${binanceSym}&interval=${timeframe}&limit=1000&startTime=${chunkStart}&endTime=${chunkEnd}`;
+
+        const res = await fetch(url, {
+          cache: 'no-store',
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (res.ok) {
+          const rawKlines = await res.json();
+          if (Array.isArray(rawKlines)) {
+            for (const k of rawKlines) {
+              const ts = Number(k[0]);
+              if (!allCandlesMap.has(ts)) {
+                allCandlesMap.set(ts, {
+                  timestamp: ts,
+                  open: parseFloat(k[1]),
+                  high: parseFloat(k[2]),
+                  low: parseFloat(k[3]),
+                  close: parseFloat(k[4]),
+                  volume: parseFloat(k[5]),
+                });
+              }
             }
           }
         }
       }
-    }
 
-    const candles = Array.from(allCandlesMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-    if (candles.length > 50) {
-      return {
-        candles,
-        source: `Binance Public Market Feed (${binanceSym})`,
-      };
+      const candles = Array.from(allCandlesMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+      if (candles.length > 50) {
+        return {
+          candles,
+          source: `Binance Data Feed (${binanceSym})`,
+        };
+      }
+    } catch (err: any) {
+      console.warn(`Binance (${baseUrl}) fallback:`, err.message);
     }
-  } catch (err: any) {
-    console.warn('Binance chunk fetch error:', err.message);
   }
 
-  throw new Error(`Could not fetch real market data for ${symbol}. Please check internet connection.`);
+  // -------------------------------------------------------------------------
+  // 4. PROVIDER 4: COINBASE PUBLIC CANDLES API
+  // -------------------------------------------------------------------------
+  try {
+    const granularity = timeframe === '5m' ? 300 : (timeframe === '15m' ? 900 : 3600);
+    const cbUrl = `https://api.exchange.coinbase.com/products/${coinbaseSym}/candles?granularity=${granularity}`;
+    const res = await fetch(cbUrl, {
+      cache: 'no-store',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res.ok) {
+      const raw = await res.json();
+      if (Array.isArray(raw) && raw.length > 30) {
+        // Coinbase format: [time, low, high, open, close, volume]
+        const candles: Candle[] = raw.map((c: any) => ({
+          timestamp: Number(c[0]) * 1000,
+          low: parseFloat(c[1]),
+          high: parseFloat(c[2]),
+          open: parseFloat(c[3]),
+          close: parseFloat(c[4]),
+          volume: parseFloat(c[5] || 0),
+        })).sort((a, b) => a.timestamp - b.timestamp);
+
+        return {
+          candles,
+          source: `Coinbase Public Feed (${coinbaseSym})`,
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('Coinbase candles fallback:', err.message);
+  }
+
+  throw new Error(`Could not fetch real market data for ${symbol}. Checked Delta Exchange (India & Global), Binance Data Mirror, and Coinbase. Please check internet connection.`);
 }
 
 /**
