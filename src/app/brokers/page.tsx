@@ -56,8 +56,6 @@ export default function BrokersPage() {
     METATRADER: { bridgeSecret: 'mt5_bridge_secret_key_2026', metaApiToken: '', metaApiAccountId: '' },
   });
 
-  const [isLiveMoney, setIsLiveMoney] = useState(false);
-
   useEffect(() => {
     try {
       const savedCreds = localStorage.getItem('myalgo_broker_creds');
@@ -228,8 +226,7 @@ export default function BrokersPage() {
 
   const fireDirectOrder = async (broker: BrokerConfig, customSymbol?: string) => {
     const symbolToTrade = customSymbol || selectedCryptoSymbol || broker.defaultSymbol;
-    const modeText = isLiveMoney ? 'REAL MONEY' : 'PAPER TRADING';
-    if (!confirm(`Place ${modeText} BUY order on ${broker.name} for 1 ${symbolToTrade} with 100x Leverage?`)) {
+    if (!confirm(`Place 100x Leverage LIVE BUY order on ${broker.name} for 1 ${symbolToTrade}?`)) {
       return;
     }
 
@@ -243,7 +240,7 @@ export default function BrokersPage() {
           symbol: symbolToTrade,
           side: 'BUY',
           quantity: 1,
-          isPaper: !isLiveMoney,
+          isPaper: false,
           leverage: 100,
           credentials: credentials[broker.id],
         }),
@@ -281,19 +278,10 @@ export default function BrokersPage() {
           </p>
         </div>
 
-        {/* Live Money vs Paper Toggle */}
-        <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto">
-          <span className="text-xs font-semibold text-slate-300">Execution:</span>
-          <button
-            onClick={() => setIsLiveMoney(!isLiveMoney)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              isLiveMoney
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30'
-                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-            }`}
-          >
-            {isLiveMoney ? '🔴 REAL MONEY LIVE' : '🟢 PAPER TRADING'}
-          </button>
+        {/* Live Execution Indicator */}
+        <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto text-xs">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="font-bold text-emerald-400">100% Real Live Money</span>
         </div>
       </div>
 
@@ -389,11 +377,7 @@ export default function BrokersPage() {
                           key={sym}
                           onClick={() => fireDirectOrder(broker, sym)}
                           disabled={firingOrder === broker.id}
-                          className={`flex-1 py-2 px-1 text-xs font-bold rounded-lg transition-all shadow ${
-                            isLiveMoney
-                              ? 'bg-rose-500 hover:bg-rose-600 text-white'
-                              : 'bg-emerald-500 hover:bg-emerald-600 text-slate-950'
-                          } disabled:opacity-50 text-center`}
+                          className="flex-1 py-2 px-1 text-xs font-black rounded-lg transition-all shadow bg-amber-500 hover:bg-amber-600 text-slate-950 disabled:opacity-50 text-center active:scale-95"
                         >
                           {sym.replace('USD', '')}
                         </button>

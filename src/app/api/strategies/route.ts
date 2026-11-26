@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       timeframe: '5m',
       strategy_type: 'CUSTOM_ALGO',
       is_active: body.is_active ?? true,
-      paper_trading: body.paper_trading ?? true,
+      paper_trading: false,
       parameters: {
         symbols: symbolsArray,
         daily_loss_pct: dailyLossPct,

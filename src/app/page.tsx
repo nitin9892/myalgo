@@ -58,7 +58,6 @@ export default function DashboardPage() {
   const [testOrderModalOpen, setTestOrderModalOpen] = useState(false);
   const [testOrderSymbol, setTestOrderSymbol] = useState('BTCUSD');
   const [testOrderSide, setTestOrderSide] = useState<'BUY' | 'SELL'>('BUY');
-  const [isTestOrderLive, setIsTestOrderLive] = useState(true);
   const [isPunchingTestOrder, setIsPunchingTestOrder] = useState(false);
   const [testOrderResult, setTestOrderResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
 
@@ -342,7 +341,7 @@ export default function DashboardPage() {
           symbol: testOrderSymbol,
           side: testOrderSide,
           quantity: minQty,
-          isPaper: !isTestOrderLive,
+          isPaper: false,
           leverage: 100,
           credentials: creds[targetBroker],
         }),
@@ -725,13 +724,8 @@ export default function DashboardPage() {
 
                     return (
                       <tr key={pos.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3.5 px-4 font-sans font-semibold text-white flex items-center gap-2">
+                        <td className="py-3.5 px-4 font-sans font-semibold text-white">
                           {pos.symbol}
-                          {pos.paper_trade && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-sans font-bold">
-                              PAPER
-                            </span>
-                          )}
                         </td>
                         <td className="py-3.5 px-4 text-xs font-sans">
                           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
@@ -959,20 +953,13 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            {/* Live Money vs Paper Toggle */}
+            {/* Execution Mode */}
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
               <span className="text-slate-300 font-medium">Execution Mode:</span>
-              <button
-                type="button"
-                onClick={() => setIsTestOrderLive(!isTestOrderLive)}
-                className={`px-3 py-1 rounded-lg font-bold text-xs transition-all ${
-                  isTestOrderLive
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                }`}
-              >
-                {isTestOrderLive ? '⚡ Live Broker Order' : '📝 Paper Order'}
-              </button>
+              <span className="px-3 py-1 rounded-lg font-bold text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                ⚡ 100% Real Live Money
+              </span>
             </div>
 
             {/* Result Message */}

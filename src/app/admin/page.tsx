@@ -14,7 +14,16 @@ import {
   Calendar,
   Lock,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  TrendingUp,
+  TrendingDown,
+  Play,
+  BarChart3,
+  Activity,
+  Clock,
+  Layers,
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -40,6 +49,21 @@ export default function AdminPage() {
   const [tokens, setTokens] = useState<TokenItem[]>([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Active Admin Tab State
+  const [activeTab, setActiveTab] = useState<'TOKENS' | 'BACKTEST'>('TOKENS');
+
+  // Real Market Backtest State (Admin Exclusive)
+  const [btSymbol, setBtSymbol] = useState('BTCUSD');
+  const [btTimeframe, setBtTimeframe] = useState<'5m' | '15m' | '1h'>('5m');
+  const [btDays, setBtDays] = useState(7);
+  const [btCapital, setBtCapital] = useState(100000);
+  const [btRiskPct, setBtRiskPct] = useState(5);
+  const [btLeverage, setBtLeverage] = useState(10);
+  const [btTrailing, setBtTrailing] = useState(true);
+  const [runningBacktest, setRunningBacktest] = useState(false);
+  const [backtestResult, setBacktestResult] = useState<any | null>(null);
+  const [backtestError, setBacktestError] = useState<string | null>(null);
 
   // New Token Form State
   const [newTokenCode, setNewTokenCode] = useState('');
@@ -184,6 +208,44 @@ export default function AdminPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleRunBacktest = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setRunningBacktest(true);
+    setBacktestError(null);
+    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
+
+    try {
+      const res = await fetch('/api/admin/backtest', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-email': emailToUse,
+        },
+        body: JSON.stringify({
+          symbol: btSymbol,
+          timeframe: btTimeframe,
+          days: btDays,
+          initialCapital: btCapital,
+          perTradeRiskPct: btRiskPct,
+          leverage: btLeverage,
+          trailingEnabled: btTrailing,
+          adminEmail: emailToUse,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.results) {
+        setBacktestResult(data.results);
+      } else {
+        setBacktestError(data.error || 'Backtest failed to execute');
+      }
+    } catch (err: any) {
+      setBacktestError(err.message || 'Network error running backtest');
+    } finally {
+      setRunningBacktest(false);
+    }
+  };
+
   // 1. Admin Login Screen
   if (!isAdminLoggedIn) {
     return (
@@ -258,10 +320,10 @@ export default function AdminPage() {
         <div>
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-6 h-6 text-cyan-400" />
-            <h1 className="text-2xl font-bold text-white">Access Code Command Center</h1>
+            <h1 className="text-2xl font-bold text-white">Master Admin Portal</h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Logged in as <span className="text-cyan-400 font-semibold">{adminEmail}</span>. Full authority to create, revoke, and monitor trader access codes.
+            Logged in as <span className="text-cyan-400 font-semibold">{adminEmail}</span>. Full authority over trader access codes and real market backtesting.
           </p>
         </div>
 
@@ -281,151 +343,506 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* Generate New Access Code Form */}
-      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <Plus className="w-5 h-5 text-emerald-400" /> Generate New Access Code
-        </h2>
+      {/* Admin Feature Navigation Tabs */}
+      <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveTab('TOKENS')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'TOKENS'
+              ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/20 font-black'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-slate-800'
+          }`}
+        >
+          <Key className="w-4 h-4" />
+          <span>Access Code Command Center</span>
+        </button>
 
-        <form onSubmit={handleCreateToken} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('BACKTEST')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'BACKTEST'
+              ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-lg shadow-emerald-500/20 font-black'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-slate-800'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4" />
+          <span>Real Market Backtesting</span>
+          <span className="text-[10px] bg-slate-950/80 px-2 py-0.5 rounded text-emerald-400 border border-emerald-500/30 font-mono font-bold">
+            Admin Only
+          </span>
+        </button>
+      </div>
+
+      {/* TAB 1: ACCESS CODES MANAGER */}
+      {activeTab === 'TOKENS' && (
+        <div className="space-y-8">
+          {/* Generate New Access Code Form */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Plus className="w-5 h-5 text-emerald-400" /> Generate New Access Code
+            </h2>
+
+            <form onSubmit={handleCreateToken} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-slate-300">Access Code</label>
+                  <button
+                    type="button"
+                    onClick={generateRandomCode}
+                    className="text-[11px] text-cyan-400 hover:underline"
+                  >
+                    Auto-Generate
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={newTokenCode}
+                  onChange={(e) => setNewTokenCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. ALGO-TRADER-99"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none uppercase"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-300">Trader Label / Name</label>
+                <input
+                  type="text"
+                  value={newTokenLabel}
+                  onChange={(e) => setNewTokenLabel(e.target.value)}
+                  placeholder="e.g. VIP Client 1"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-300">Max Device Uses</label>
+                <input
+                  type="number"
+                  value={maxUses}
+                  onChange={(e) => setMaxUses(Number(e.target.value))}
+                  min="1"
+                  max="9999"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-300">Valid For (Days)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={expiryDays}
+                    onChange={(e) => setExpiryDays(Number(e.target.value))}
+                    min="1"
+                    max="365"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={creatingToken}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shrink-0 disabled:opacity-50"
+                  >
+                    {creatingToken ? 'Creating...' : 'Create'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          {/* Access Codes Table */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-300">Access Code</label>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Key className="w-5 h-5 text-emerald-400" /> Active Access Tokens ({tokens.length})
+              </h2>
               <button
-                type="button"
-                onClick={generateRandomCode}
-                className="text-[11px] text-cyan-400 hover:underline"
+                onClick={() => fetchTokens()}
+                className="text-xs text-cyan-400 hover:underline flex items-center gap-1"
               >
-                Auto-Generate
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh List
               </button>
             </div>
-            <input
-              type="text"
-              value={newTokenCode}
-              onChange={(e) => setNewTokenCode(e.target.value.toUpperCase())}
-              placeholder="e.g. ALGO-TRADER-99"
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none uppercase"
-              required
-            />
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">Trader Label / Name</label>
-            <input
-              type="text"
-              value={newTokenLabel}
-              onChange={(e) => setNewTokenLabel(e.target.value)}
-              placeholder="e.g. VIP Client 1"
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-500 focus:outline-none"
-            />
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Code</th>
+                    <th className="py-3 px-4">Label</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Uses</th>
+                    <th className="py-3 px-4">Expires</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-mono text-xs">
+                  {tokens.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2">
+                        <span className="font-mono text-emerald-400">{t.code}</span>
+                        <button
+                          onClick={() => copyCode(t.code, t.id)}
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                          title="Copy Code"
+                        >
+                          {copiedId === t.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </td>
+                      <td className="py-3.5 px-4 font-sans text-slate-300">{t.label}</td>
+                      <td className="py-3.5 px-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          t.is_active
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {t.is_active ? 'ACTIVE' : 'REVOKED'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">{t.used_count || 0} / {t.max_uses}</td>
+                      <td className="py-3.5 px-4 font-sans text-slate-400 text-xs">
+                        {t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'Never'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          onClick={() => handleToggleActive(t.id, t.is_active)}
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                            t.is_active
+                              ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          }`}
+                        >
+                          {t.is_active ? 'Revoke (Block)' : 'Activate'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
+        </div>
+      )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">Max Device Uses</label>
-            <input
-              type="number"
-              value={maxUses}
-              onChange={(e) => setMaxUses(Number(e.target.value))}
-              min="1"
-              max="9999"
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none"
-            />
-          </div>
+      {/* TAB 2: REAL MARKET DATA BACKTESTING (ADMIN EXCLUSIVE) */}
+      {activeTab === 'BACKTEST' && (
+        <div className="space-y-6">
+          {/* Backtest Configuration Card */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-6 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center text-slate-950 font-bold shadow-lg shadow-emerald-500/20">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    Real Market Data Backtesting Engine
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Simulate Strategy C (6 Setups: PDH • PDL • PDC • 1:3 RR) on 100% real historical candles.
+                  </p>
+                </div>
+              </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">Valid For (Days)</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                value={expiryDays}
-                onChange={(e) => setExpiryDays(Number(e.target.value))}
-                min="1"
-                max="365"
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none"
-              />
+              <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold text-xs flex items-center gap-1.5 self-start sm:self-auto">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Direct Live Feed
+              </span>
+            </div>
+
+            <form onSubmit={handleRunBacktest} className="space-y-5">
+              {/* Row 1: Symbol & Lookback */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Symbol Selection */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300">Target Instrument</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setBtSymbol(s)}
+                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                          btSymbol === s
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-md'
+                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {s.replace('USD', '')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duration / Lookback Days */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300">Lookback Period</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[3, 7, 14, 30].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setBtDays(d)}
+                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                          btDays === d
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-md'
+                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {d} Days
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: Capital, Risk %, Leverage */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300">Initial Capital (INR ₹)</label>
+                  <input
+                    type="number"
+                    value={btCapital}
+                    onChange={(e) => setBtCapital(Number(e.target.value))}
+                    min="1000"
+                    step="5000"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300">Risk per Trade (%)</label>
+                  <input
+                    type="number"
+                    value={btRiskPct}
+                    onChange={(e) => setBtRiskPct(Number(e.target.value))}
+                    min="1"
+                    max="20"
+                    step="0.5"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-300">Leverage</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[10, 25, 50, 100].map((lev) => (
+                      <button
+                        key={lev}
+                        type="button"
+                        onClick={() => setBtLeverage(lev)}
+                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                          btLeverage === lev
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-md'
+                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {lev}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Strategy Rules Note */}
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    <strong>Rule Set:</strong> 6 Core Setups (PDH, PDL, PDC) • 1:3 RR • Signal Candle SL • Max 3 Trades/Day • 5m Feed
+                  </span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={btTrailing}
+                    onChange={(e) => setBtTrailing(e.target.checked)}
+                    className="accent-emerald-500"
+                  />
+                  <span>Trailing Stop (+3 pts / 10 pts)</span>
+                </label>
+              </div>
+
+              {/* Action Button */}
               <button
                 type="submit"
-                disabled={creatingToken}
-                className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shrink-0 disabled:opacity-50"
+                disabled={runningBacktest}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-cyan-500 to-emerald-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99]"
               >
-                {creatingToken ? 'Creating...' : 'Create'}
+                {runningBacktest ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Fetching Real Market Feed & Simulating Trades...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-slate-950" />
+                    <span>Run Backtest on Real Market Data ({btSymbol} • {btDays} Days)</span>
+                  </>
+                )}
               </button>
-            </div>
+            </form>
+
+            {backtestError && (
+              <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{backtestError}</span>
+              </div>
+            )}
           </div>
-        </form>
-      </div>
 
-      {/* Access Codes Table */}
-      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Key className="w-5 h-5 text-emerald-400" /> Active Access Tokens ({tokens.length})
-          </h2>
-          <button
-            onClick={() => fetchTokens()}
-            className="text-xs text-cyan-400 hover:underline"
-          >
-            Refresh List
-          </button>
-        </div>
+          {/* Backtest Results Display */}
+          {backtestResult && (
+            <div className="space-y-6">
+              {/* Feed Header */}
+              <div className="p-4 rounded-xl bg-slate-900 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span className="font-semibold text-white">
+                    Verified on {backtestResult.totalCandles} Real 5-Minute Candles
+                  </span>
+                  <span className="text-slate-400">({backtestResult.dataSource})</span>
+                </div>
+                <span className="text-slate-400 font-mono">
+                  {backtestResult.days} Days Window • {backtestResult.symbol}
+                </span>
+              </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
-              <tr>
-                <th className="py-3 px-4">Code</th>
-                <th className="py-3 px-4">Label</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Uses</th>
-                <th className="py-3 px-4">Expires</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 font-mono text-xs">
-              {tokens.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2">
-                    <span className="font-mono text-emerald-400">{t.code}</span>
-                    <button
-                      onClick={() => copyCode(t.code, t.id)}
-                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                      title="Copy Code"
-                    >
-                      {copiedId === t.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </td>
-                  <td className="py-3.5 px-4 font-sans text-slate-300">{t.label}</td>
-                  <td className="py-3.5 px-4">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      t.is_active
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                    }`}>
-                      {t.is_active ? 'ACTIVE' : 'REVOKED'}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4">{t.used_count || 0} / {t.max_uses}</td>
-                  <td className="py-3.5 px-4 font-sans text-slate-400 text-xs">
-                    {t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'Never'}
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => handleToggleActive(t.id, t.is_active)}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                        t.is_active
-                          ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      }`}
-                    >
-                      {t.is_active ? 'Revoke (Block)' : 'Activate'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              {/* 4 KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Net P&L */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-xs text-slate-400 font-semibold uppercase">Net Realized P&L</span>
+                  <div className={`text-2xl font-black font-mono ${
+                    backtestResult.netPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {backtestResult.netPnl >= 0 ? '+' : ''}₹{backtestResult.netPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <span className={`text-xs font-bold font-mono ${
+                    backtestResult.returnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}>
+                    {backtestResult.returnPct >= 0 ? '+' : ''}{backtestResult.returnPct}% Return
+                  </span>
+                </div>
+
+                {/* Win Rate */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-xs text-slate-400 font-semibold uppercase">Win Rate</span>
+                  <div className="text-2xl font-black font-mono text-cyan-400">
+                    {backtestResult.winRatePct}%
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    {backtestResult.winningTrades} Wins / {backtestResult.losingTrades} Losses
+                  </span>
+                </div>
+
+                {/* Profit Factor */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-xs text-slate-400 font-semibold uppercase">Profit Factor</span>
+                  <div className="text-2xl font-black font-mono text-amber-400">
+                    {backtestResult.profitFactor}x
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    Gross Win/Loss Ratio
+                  </span>
+                </div>
+
+                {/* Max Drawdown */}
+                <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-xs text-slate-400 font-semibold uppercase">Max Drawdown</span>
+                  <div className="text-2xl font-black font-mono text-rose-400">
+                    {backtestResult.maxDrawdownPct}%
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">
+                    Strict Capital Preservation
+                  </span>
+                </div>
+              </div>
+
+              {/* Trade Log Table */}
+              <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-emerald-400" />
+                    Simulated Trades History ({backtestResult.totalTrades} Trades)
+                  </h3>
+                  <span className="text-xs text-slate-400 font-mono">
+                    Final Capital: ₹{backtestResult.finalCapital.toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                {backtestResult.trades.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-6 text-center">
+                    No trade signals triggered during this lookback window with the 6 setups filter.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-300">
+                      <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="py-3 px-3">Trade</th>
+                          <th className="py-3 px-3">Setup Name</th>
+                          <th className="py-3 px-3">Side</th>
+                          <th className="py-3 px-3">Entry &rarr; Exit</th>
+                          <th className="py-3 px-3">SL &bull; TP</th>
+                          <th className="py-3 px-3">Reason</th>
+                          <th className="py-3 px-3 text-right">P&L (INR)</th>
+                          <th className="py-3 px-3 text-center">Result</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 font-mono text-xs">
+                        {backtestResult.trades.map((tr: any) => (
+                          <tr key={tr.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-3 font-bold text-white">
+                              {tr.id}
+                              <span className="block text-[10px] text-slate-500 font-normal">{tr.entryTime}</span>
+                            </td>
+                            <td className="py-3 px-3 font-sans text-xs text-slate-200">
+                              {tr.setupName}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                tr.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                              }`}>
+                                {tr.side}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-300">
+                              {tr.entryPrice} &rarr; {tr.exitPrice}
+                            </td>
+                            <td className="py-3 px-3 text-slate-400 text-[11px]">
+                              SL: {tr.stopLoss} | TP: {tr.takeProfit}
+                            </td>
+                            <td className="py-3 px-3 text-slate-400 text-[11px]">
+                              {tr.exitReason}
+                            </td>
+                            <td className={`py-3 px-3 text-right font-bold ${
+                              tr.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}>
+                              {tr.pnl >= 0 ? '+' : ''}₹{tr.pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                                tr.result === 'WIN'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                              }`}>
+                                {tr.result}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

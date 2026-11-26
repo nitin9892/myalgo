@@ -24,13 +24,20 @@ export async function POST(request: Request) {
     }
 
     const appliedLeverage = Number(leverage || 100);
+
+    let cleanSymbol = String(symbol || 'BTCUSD').toUpperCase().trim();
+    if (cleanSymbol === 'ETH' || cleanSymbol === 'ETHUSDT') cleanSymbol = 'ETHUSD';
+    else if (cleanSymbol === 'SOL' || cleanSymbol === 'SOLUSDT' || cleanSymbol === 'SPL' || cleanSymbol === 'SPLUSD') cleanSymbol = 'SOLUSD';
+    else if (cleanSymbol === 'XRP' || cleanSymbol === 'XRPUSDT') cleanSymbol = 'XRPUSD';
+    else if (cleanSymbol === 'BTC' || cleanSymbol === 'BTCUSDT') cleanSymbol = 'BTCUSD';
+
     const adapter = getBrokerAdapter(broker as BrokerType, credentials);
     const orderRequest: OrderRequest = {
-      symbol: symbol.toUpperCase(),
+      symbol: cleanSymbol,
       side: side.toUpperCase() as 'BUY' | 'SELL',
       quantity: Number(quantity),
       orderType: 'MARKET',
-      paperTrade: isPaper,
+      paperTrade: false,
       leverage: appliedLeverage,
     };
 
@@ -38,7 +45,6 @@ export async function POST(request: Request) {
     const supabase = getAdminSupabase();
 
     if (result.success) {
-      const modeLabel = isPaper ? 'Manual Paper Execution' : 'Manual LIVE Money Execution';
       await supabase.from('trades').insert({
         broker_name: broker,
         symbol: orderRequest.symbol,
@@ -46,15 +52,15 @@ export async function POST(request: Request) {
         quantity: orderRequest.quantity,
         entry_price: result.price || 0,
         status: 'OPEN',
-        paper_trade: isPaper,
+        paper_trade: false,
         broker_order_id: result.orderId,
-        notes: `${modeLabel} | Test Order (${appliedLeverage}x Leverage)`,
+        notes: `LIVE Money Execution | Test Order (${appliedLeverage}x Leverage)`,
       });
 
       await supabase.from('system_logs').insert({
         level: 'TRADE_SIGNAL',
         source: `DIRECT_${broker}`,
-        message: `Direct Test Order: ${side} ${quantity} ${symbol} (${appliedLeverage}x Leverage, ${isPaper ? 'PAPER' : 'LIVE MONEY'})`,
+        message: `Direct Test Order: ${side} ${quantity} ${symbol} (${appliedLeverage}x Leverage, LIVE MONEY)`,
         metadata: { result, leverage: appliedLeverage },
       });
     }

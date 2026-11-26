@@ -42,7 +42,7 @@ export const DEFAULT_MASTER_STRATEGY: SingleStrategyConfig = {
   symbol: 'BTCUSD',
   timeframe: '5m',
   is_active: true,
-  paper_trading: true,
+  paper_trading: false,
   params: {
     sl_candle_mode: 'signal_candle',
     max_trades_per_day: 3,
@@ -151,7 +151,7 @@ export async function runTradingEngineCycle() {
           symbol: data.symbol || DEFAULT_MASTER_STRATEGY.symbol,
           timeframe: data.timeframe || '5m',
           is_active: data.is_active ?? true,
-          paper_trading: data.paper_trading ?? true,
+          paper_trading: false,
           params: { ...DEFAULT_MASTER_STRATEGY.params, ...(data.parameters || {}) },
         };
       }

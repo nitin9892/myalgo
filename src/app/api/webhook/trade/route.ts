@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { broker = 'DHAN', symbol, side, quantity, price, stopLoss, takeProfit, paperTrade = true, secret } = body;
+    const { broker = 'DHAN', symbol, side, quantity, price, stopLoss, takeProfit, paperTrade = false, secret } = body;
 
     const expectedSecret = process.env.MT_BRIDGE_SECRET || process.env.CRON_SECRET;
     if (expectedSecret && secret !== expectedSecret) {

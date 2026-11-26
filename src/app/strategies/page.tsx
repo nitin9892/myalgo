@@ -40,7 +40,6 @@ export default function StrategiesPage() {
   const [manualLeverage, setManualLeverage] = useState<number>(10);
 
   // State
-  const [paperTrading, setPaperTrading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -78,7 +77,6 @@ export default function StrategiesPage() {
         if (s.parameters?.leverage) {
           setManualLeverage(Number(s.parameters.leverage) || 10);
         }
-        setPaperTrading(s.paper_trading ?? true);
       }
     } catch (err) {
       console.error('Failed to load strategy:', err);
@@ -127,7 +125,7 @@ export default function StrategiesPage() {
           leverageMode,
           leverage: manualLeverage,
           is_active: true,
-          paper_trading: paperTrading,
+          paper_trading: false,
         }),
       });
 
@@ -157,17 +155,11 @@ export default function StrategiesPage() {
           </p>
         </div>
 
-        {/* Paper vs Live Toggle */}
-        <button
-          onClick={() => setPaperTrading(!paperTrading)}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border self-start sm:self-auto ${
-            paperTrading
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-              : 'bg-rose-500 text-white shadow-lg shadow-rose-500/30'
-          }`}
-        >
-          {paperTrading ? '🟢 PAPER TRADING' : '🔴 REAL MONEY LIVE'}
-        </button>
+        {/* Live Execution Indicator */}
+        <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 self-start sm:self-auto text-xs">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="font-bold text-emerald-400">100% Real Live Trading</span>
+        </div>
       </div>
 
       {/* Success Notification */}

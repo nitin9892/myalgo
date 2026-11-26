@@ -204,13 +204,21 @@ Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
     };
   }
 
-  async getLatestCandles(symbol: string = 'BTCUSD', timeframe: string = '1m', count: number = 50): Promise<Candle[]> {
+  async getLatestCandles(symbol: string = 'BTCUSD', timeframe: string = '5m', count: number = 50): Promise<Candle[]> {
     try {
-      const resolution = timeframe;
-      const endTime = Math.floor(Date.now() / 1000);
-      const startTime = endTime - count * 60 * (timeframe === '5m' ? 5 : 1);
+      let sym = symbol.toUpperCase().trim();
+      if (sym === 'BTC' || sym === 'BTCUSDT') sym = 'BTCUSD';
+      else if (sym === 'ETH' || sym === 'ETHUSDT') sym = 'ETHUSD';
+      else if (sym === 'SOL' || sym === 'SOLUSDT' || sym === 'SPL' || sym === 'SPLUSD') sym = 'SOLUSD';
+      else if (sym === 'XRP' || sym === 'XRPUSDT') sym = 'XRPUSD';
 
-      const path = `/v2/chart/history?symbol=${symbol}&resolution=${resolution}&start=${startTime}&end=${endTime}`;
+      // Delta expects resolution like "1", "3", "5", "15", "30", "60", "120", "240", "D", "W"
+      const resolution = timeframe.replace('m', '');
+      const to = Math.floor(Date.now() / 1000);
+      const minutes = timeframe === '5m' ? 5 : (timeframe === '15m' ? 15 : (timeframe === '1h' ? 60 : 1));
+      const from = to - count * 60 * minutes;
+
+      const path = `/v2/chart/history?symbol=${sym}&resolution=${resolution}&from=${from}&to=${to}`;
       const res = await fetch(`${this.baseUrl}${path}`);
 
       if (res.ok) {
@@ -218,11 +226,11 @@ Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
         if (data.result && data.result.t && data.result.t.length > 0) {
           return data.result.t.map((t: number, i: number) => ({
             timestamp: t * 1000,
-            open: data.result.o[i],
-            high: data.result.h[i],
-            low: data.result.l[i],
-            close: data.result.c[i],
-            volume: data.result.v[i] || 0,
+            open: Number(data.result.o[i]),
+            high: Number(data.result.h[i]),
+            low: Number(data.result.l[i]),
+            close: Number(data.result.c[i]),
+            volume: Number(data.result.v[i] || 0),
           }));
         }
       }
@@ -233,41 +241,48 @@ Delta Exchange detected your server IP as: [ ${detectedIp || 'Server IP'} ]
   }
 
   async placeOrder(order: OrderRequest): Promise<OrderResult> {
-    if (order.paperTrade || !this.apiKey) {
+    let sym = order.symbol.toUpperCase().trim();
+    // Normalize coin aliases: ETH -> ETHUSD, SOL / SPL -> SOLUSD, XRP -> XRPUSD, BTC -> BTCUSD
+    if (sym === 'BTC' || sym === 'BTCUSDT') sym = 'BTCUSD';
+    else if (sym === 'ETH' || sym === 'ETHUSDT') sym = 'ETHUSD';
+    else if (sym === 'SOL' || sym === 'SOLUSDT' || sym === 'SPL' || sym === 'SPLUSD') sym = 'SOLUSD';
+    else if (sym === 'XRP' || sym === 'XRPUSDT') sym = 'XRPUSD';
+
+    if (!this.apiKey || !this.apiSecret) {
       return {
-        success: true,
-        orderId: `PAPER-DELTA-${Date.now()}`,
-        symbol: order.symbol,
+        success: false,
+        symbol: sym,
         side: order.side,
-        price: order.price || 95000,
+        price: order.price || 0,
         quantity: order.quantity,
-        status: 'FILLED',
-        message: 'Delta Paper Trade Executed Successfully',
+        status: 'REJECTED',
+        message: 'Delta API Key & Secret required for live order execution. Connect your broker in /brokers.',
       };
     }
 
     try {
       const path = '/v2/orders';
-      const sym = order.symbol.toUpperCase();
 
-      // Resolve numeric product_id for Delta matching engine
+      // Verified live product_ids for Delta Exchange Perpetual Futures:
+      // BTCUSD: 27 | ETHUSD: 3136 | SOLUSD: 14823 | XRPUSD: 14969
       const knownProductIds: Record<string, number> = {
         'BTCUSD': 27,
-        'ETHUSD': 28,
-        'SOLUSD': 84,
-        'XRPUSD': 15,
+        'ETHUSD': 3136,
+        'SOLUSD': 14823,
+        'XRPUSD': 14969,
       };
 
       let productId: number | undefined = knownProductIds[sym];
       if (!productId) {
         try {
-          const prodRes = await fetch(`${this.baseUrl}/v2/products?symbol=${sym}`);
+          const prodRes = await fetch(`${this.baseUrl}/v2/products`);
           if (prodRes.ok) {
             const prodData = await prodRes.json();
-            if (prodData.result?.id) {
-              productId = Number(prodData.result.id);
-            } else if (Array.isArray(prodData.result) && prodData.result[0]?.id) {
-              productId = Number(prodData.result[0].id);
+            const list = Array.isArray(prodData.result) ? prodData.result : [];
+            const match = list.find((p: any) => p.symbol === sym && p.contract_type === 'perpetual_futures') ||
+                          list.find((p: any) => p.symbol === sym);
+            if (match?.id) {
+              productId = Number(match.id);
             }
           }
         } catch {}
