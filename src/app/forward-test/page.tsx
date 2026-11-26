@@ -102,11 +102,27 @@ export default function ForwardTestingPage() {
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
   const [capitalInput, setCapitalInput] = useState<number>(100000);
   const [riskPct, setRiskPct] = useState<number>(2);
+  const [userToken, setUserToken] = useState<string>('');
+
+  const getAuthHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('myalgo_access_token') || '' : '';
+    return {
+      'Content-Type': 'application/json',
+      'x-access-token': token,
+    };
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('myalgo_access_token') || '';
+    setUserToken(saved);
+  }, []);
 
   // Fetch Forward Test State
   const fetchState = async () => {
     try {
-      const res = await fetch('/api/forward-test');
+      const res = await fetch('/api/forward-test', {
+        headers: getAuthHeaders(),
+      });
       const json = await res.json();
       if (json.success && json.state) {
         setData(json.state);
@@ -132,7 +148,7 @@ export default function ForwardTestingPage() {
       try {
         const res = await fetch('/api/forward-test', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({ action: 'SYNC_CYCLE' }),
         });
         const json = await res.json();
@@ -171,7 +187,7 @@ export default function ForwardTestingPage() {
     try {
       await fetch('/api/forward-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           action: 'UPDATE_CONFIG',
           strategy: strat,
@@ -192,7 +208,7 @@ export default function ForwardTestingPage() {
     try {
       const res = await fetch('/api/forward-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ action }),
       });
       const json = await res.json();
@@ -211,7 +227,7 @@ export default function ForwardTestingPage() {
     try {
       const res = await fetch('/api/forward-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           action: 'RUN_1DAY_REPLAY',
           strategy: selectedStrategy,
@@ -254,7 +270,7 @@ export default function ForwardTestingPage() {
     try {
       const res = await fetch('/api/forward-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ action: 'RESET_WALLET', startingBalance: capitalInput }),
       });
       const json = await res.json();
@@ -285,7 +301,7 @@ export default function ForwardTestingPage() {
     try {
       const res = await fetch('/api/forward-test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ action: 'SQUARE_OFF', positionId: pos.id }),
       });
       const json = await res.json();
@@ -332,7 +348,7 @@ export default function ForwardTestingPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `forward_test_1day_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `forward_test_1day_${userToken || 'trader'}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -365,6 +381,14 @@ export default function ForwardTestingPage() {
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Simulate real-time trades with a Virtual Wallet on 100% live market feeds (Delta India / Binance Vision).
           </p>
+          <div className="flex items-center gap-2 mt-2.5">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span className="text-slate-400">Isolated Session:</span>
+              <span className="font-mono font-bold text-emerald-300">{userToken || 'Master Session'}</span>
+              <span className="text-[10px] text-emerald-500/80 ml-1">• Private Wallet & Positions</span>
+            </div>
+          </div>
         </div>
 
         {/* Primary Controls */}

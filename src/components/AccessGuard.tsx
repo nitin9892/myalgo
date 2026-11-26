@@ -12,6 +12,39 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const revokeAccessLocally = (reasonMsg?: string) => {
+    localStorage.removeItem('myalgo_access_token');
+    document.cookie = 'myalgo_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;';
+    setIsUnlocked(false);
+    if (reasonMsg) {
+      setError(reasonMsg);
+    }
+  };
+
+  const verifySessionStatus = async (token: string, isSilentCheck: boolean = false) => {
+    try {
+      const res = await fetch('/api/access/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: token, checkOnly: true }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsUnlocked(true);
+      } else {
+        revokeAccessLocally(
+          data.message || 'Access revoked: This access code has been disabled by the administrator.'
+        );
+      }
+    } catch (err) {
+      // If network fails during initial check, allow if saved token exists; if silent heartbeat, keep existing state
+      if (!isSilentCheck) {
+        setIsUnlocked(true);
+      }
+    }
+  };
+
   useEffect(() => {
     // Admin routes handle their own authentication
     if (pathname.startsWith('/admin')) {
@@ -19,13 +52,37 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Check localStorage or cookie for valid access
     const savedToken = localStorage.getItem('myalgo_access_token');
-    if (savedToken) {
-      setIsUnlocked(true);
-    } else {
+    if (!savedToken) {
       setIsUnlocked(false);
+      return;
     }
+
+    // Immediately verify token active status with backend on load/navigation
+    verifySessionStatus(savedToken.trim().toUpperCase(), false);
+
+    // Active heartbeat check every 8 seconds to enforce immediate revocation
+    const interval = setInterval(() => {
+      const currentToken = localStorage.getItem('myalgo_access_token');
+      if (!currentToken) {
+        setIsUnlocked(false);
+        return;
+      }
+      verifySessionStatus(currentToken.trim().toUpperCase(), true);
+    }, 8000);
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'myalgo_access_token' && !e.newValue) {
+        setIsUnlocked(false);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, [pathname]);
 
   const handleUnlock = async (e: React.FormEvent) => {

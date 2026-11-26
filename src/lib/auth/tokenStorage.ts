@@ -253,6 +253,39 @@ export async function updateAccessTokenStatus(
 }
 
 /**
+ * Verifies an access code without consuming/incrementing used_count (for session active checks)
+ */
+export async function verifyAccessTokenStatusOnly(
+  rawCode: string
+): Promise<{ valid: boolean; message: string; token?: AccessToken }> {
+  const cleanCode = (rawCode || '').trim().toUpperCase();
+  if (!cleanCode) {
+    return { valid: false, message: 'Please enter an access code' };
+  }
+
+  const tokens = await getAllAccessTokens();
+  const token = tokens.find(t => t.code === cleanCode);
+
+  if (!token) {
+    return { valid: false, message: 'Invalid access code. Please contact administrator.' };
+  }
+
+  if (!token.is_active) {
+    return { valid: false, message: 'This access code has been revoked by the administrator.' };
+  }
+
+  if (token.expires_at && new Date(token.expires_at).getTime() < Date.now()) {
+    return { valid: false, message: 'This access code has expired.' };
+  }
+
+  return {
+    valid: true,
+    message: 'Access code is active and valid',
+    token,
+  };
+}
+
+/**
  * Verifies an access code and increments used_count
  */
 export async function verifyAndConsumeAccessToken(

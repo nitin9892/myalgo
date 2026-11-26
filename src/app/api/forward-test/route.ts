@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { 
   loadForwardTestState, 
   saveForwardTestState, 
-  resetVirtualWallet 
+  resetVirtualWallet,
+  cleanUserId
 } from '@/lib/forward_test/store';
 import { 
   runForwardTestCycle, 
@@ -11,6 +12,42 @@ import {
 } from '@/lib/forward_test/engine';
 
 export const dynamic = 'force-dynamic';
+
+function extractUserId(request: Request, body?: any): string {
+  // 1. Header
+  const headerToken = request.headers.get('x-access-token');
+  if (headerToken && headerToken.trim()) {
+    return cleanUserId(headerToken);
+  }
+
+  // 2. Request body
+  if (body?.userId && typeof body.userId === 'string' && body.userId.trim()) {
+    return cleanUserId(body.userId);
+  }
+  if (body?.token && typeof body.token === 'string' && body.token.trim()) {
+    return cleanUserId(body.token);
+  }
+
+  // 3. Cookie header
+  const cookieHeader = request.headers.get('cookie') || '';
+  const match = cookieHeader.match(/myalgo_access_token=([^;]+)/);
+  if (match && match[1]) {
+    try {
+      return cleanUserId(decodeURIComponent(match[1]));
+    } catch {}
+  }
+
+  // 4. URL query param
+  try {
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get('userId') || url.searchParams.get('token');
+    if (queryToken && queryToken.trim()) {
+      return cleanUserId(queryToken);
+    }
+  } catch {}
+
+  return 'DEFAULT_TRADER';
+}
 
 function computeStats(state: any) {
   const closed = state.closedTrades || [];
@@ -35,11 +72,12 @@ function computeStats(state: any) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const state = loadForwardTestState();
+    const userId = extractUserId(request);
+    const state = loadForwardTestState(userId);
     const stats = computeStats(state);
-    return NextResponse.json({ success: true, state, stats });
+    return NextResponse.json({ success: true, userId, state, stats });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
@@ -49,12 +87,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const action = body.action || 'SYNC_CYCLE';
+    const userId = extractUserId(request, body);
 
-    let state = loadForwardTestState();
+    let state = loadForwardTestState(userId);
 
     switch (action) {
       case 'SYNC_CYCLE': {
-        state = await runForwardTestCycle();
+        state = await runForwardTestCycle(userId);
         break;
       }
 
@@ -66,20 +105,20 @@ export async function POST(request: Request) {
         const capital = Math.max(1000, Number(body.startingCapital || state.wallet.startingBalance || 100000));
         const riskPct = Math.min(10, Math.max(0.5, Number(body.perTradeRiskPct || state.config.perTradeRiskPct || 2)));
 
-        state = await runOneDayRealtimeReplay(strategy, symbols, capital, riskPct);
+        state = await runOneDayRealtimeReplay(strategy, symbols, capital, riskPct, userId);
         break;
       }
 
       case 'START': {
         state.config.isRunning = true;
-        saveForwardTestState(state);
-        state = await runForwardTestCycle();
+        saveForwardTestState(state, userId);
+        state = await runForwardTestCycle(userId);
         break;
       }
 
       case 'PAUSE': {
         state.config.isRunning = false;
-        saveForwardTestState(state);
+        saveForwardTestState(state, userId);
         break;
       }
 
@@ -90,19 +129,19 @@ export async function POST(request: Request) {
         }
         if (body.perTradeRiskPct) state.config.perTradeRiskPct = Number(body.perTradeRiskPct);
         if (body.leverage) state.config.leverage = Number(body.leverage);
-        saveForwardTestState(state);
+        saveForwardTestState(state, userId);
         break;
       }
 
       case 'RESET_WALLET': {
         const newBalance = Math.max(1000, Number(body.startingBalance || 100000));
-        state = resetVirtualWallet(newBalance);
+        state = resetVirtualWallet(userId, newBalance);
         break;
       }
 
       case 'SQUARE_OFF': {
         if (body.positionId) {
-          state = squareOffForwardPosition(body.positionId);
+          state = squareOffForwardPosition(body.positionId, userId);
         }
         break;
       }
@@ -113,7 +152,7 @@ export async function POST(request: Request) {
     }
 
     const stats = computeStats(state);
-    return NextResponse.json({ success: true, state, stats });
+    return NextResponse.json({ success: true, userId, state, stats });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

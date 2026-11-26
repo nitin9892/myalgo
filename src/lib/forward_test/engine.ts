@@ -13,8 +13,8 @@ import {
 /**
  * Executes a live forward-testing cycle across all selected instruments
  */
-export async function runForwardTestCycle(): Promise<ForwardTestState> {
-  const state = loadForwardTestState();
+export async function runForwardTestCycle(userId?: string): Promise<ForwardTestState> {
+  const state = loadForwardTestState(userId);
   if (!state.config.isRunning) {
     return state;
   }
@@ -200,7 +200,7 @@ export async function runForwardTestCycle(): Promise<ForwardTestState> {
 
   state.wallet.unrealizedPnl = Number(totalUnrealizedPnl.toFixed(2));
   state.config.lastCheckedAt = new Date().toISOString();
-  saveForwardTestState(state);
+  saveForwardTestState(state, userId);
   return state;
 }
 
@@ -211,7 +211,8 @@ export async function runOneDayRealtimeReplay(
   strategyName: 'Strategy C' | 'Strategy B' | 'Strategy A',
   selectedSymbols: string[],
   startingCapital: number = 100000,
-  riskPct: number = 2
+  riskPct: number = 2,
+  userId?: string
 ): Promise<ForwardTestState> {
   const state: ForwardTestState = {
     wallet: {
@@ -406,15 +407,15 @@ export async function runOneDayRealtimeReplay(
     }
   }
 
-  saveForwardTestState(state);
+  saveForwardTestState(state, userId);
   return state;
 }
 
 /**
  * Manually squares off an active forward-test position
  */
-export function squareOffForwardPosition(posId: string): ForwardTestState {
-  const state = loadForwardTestState();
+export function squareOffForwardPosition(posId: string, userId?: string): ForwardTestState {
+  const state = loadForwardTestState(userId);
   const index = state.positions.findIndex((p) => p.id === posId);
   if (index >= 0) {
     const pos = state.positions[index];
@@ -444,7 +445,7 @@ export function squareOffForwardPosition(posId: string): ForwardTestState {
     state.wallet.realizedPnl = Number((state.wallet.realizedPnl + finalPnl).toFixed(2));
     state.closedTrades.unshift(closedTrade);
     state.positions.splice(index, 1);
-    saveForwardTestState(state);
+    saveForwardTestState(state, userId);
   }
 
   return state;

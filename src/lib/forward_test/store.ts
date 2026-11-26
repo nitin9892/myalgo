@@ -62,7 +62,16 @@ export interface ForwardTestState {
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-const STORE_FILE = path.join(DATA_DIR, 'forward_test.json');
+
+export function cleanUserId(userId?: string): string {
+  const raw = (userId || 'DEFAULT_TRADER').trim().toUpperCase();
+  const cleaned = raw.replace(/[^A-Z0-9_-]/g, '_');
+  return cleaned || 'DEFAULT_TRADER';
+}
+
+function getStoreFilePath(cleanId: string): string {
+  return path.join(DATA_DIR, `forward_test_${cleanId}.json`);
+}
 
 const DEFAULT_STATE: ForwardTestState = {
   wallet: {
@@ -84,48 +93,61 @@ const DEFAULT_STATE: ForwardTestState = {
   lastUpdated: new Date().toISOString(),
 };
 
-// In-memory cache for fast serverless execution
-let memoryState: ForwardTestState | null = null;
+// In-memory cache partitioned per user for fast execution
+const memoryStates = new Map<string, ForwardTestState>();
 
-export function loadForwardTestState(): ForwardTestState {
-  if (memoryState) return memoryState;
+export function loadForwardTestState(userId?: string): ForwardTestState {
+  const cleanId = cleanUserId(userId);
+  if (memoryStates.has(cleanId)) {
+    return memoryStates.get(cleanId)!;
+  }
+
+  const filePath = getStoreFilePath(cleanId);
+  const legacyFile = path.join(DATA_DIR, 'forward_test.json');
 
   try {
-    if (fs.existsSync(STORE_FILE)) {
-      const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+    const targetFile = fs.existsSync(filePath) ? filePath : (cleanId === 'DEFAULT_TRADER' && fs.existsSync(legacyFile) ? legacyFile : null);
+    if (targetFile) {
+      const raw = fs.readFileSync(targetFile, 'utf-8');
       const parsed = JSON.parse(raw);
-      memoryState = {
+      const loaded: ForwardTestState = {
         ...DEFAULT_STATE,
         ...parsed,
         wallet: { ...DEFAULT_STATE.wallet, ...(parsed.wallet || {}) },
         config: { ...DEFAULT_STATE.config, ...(parsed.config || {}) },
       };
-      return memoryState!;
+      memoryStates.set(cleanId, loaded);
+      return loaded;
     }
   } catch (err: any) {
-    console.warn('Failed reading forward_test.json, using defaults:', err.message);
+    console.warn(`Failed reading forward test file for user ${cleanId}:`, err.message);
   }
 
-  memoryState = JSON.parse(JSON.stringify(DEFAULT_STATE));
-  return memoryState!;
+  const fresh: ForwardTestState = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  fresh.lastUpdated = new Date().toISOString();
+  memoryStates.set(cleanId, fresh);
+  return fresh;
 }
 
-export function saveForwardTestState(state: ForwardTestState): void {
-  memoryState = state;
+export function saveForwardTestState(state: ForwardTestState, userId?: string): void {
+  const cleanId = cleanUserId(userId);
   state.lastUpdated = new Date().toISOString();
+  memoryStates.set(cleanId, state);
 
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(STORE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+    const filePath = getStoreFilePath(cleanId);
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), 'utf-8');
   } catch (err: any) {
-    console.warn('Failed writing forward_test.json:', err.message);
+    console.warn(`Failed writing forward test file for user ${cleanId}:`, err.message);
   }
 }
 
-export function resetVirtualWallet(newStartingBalance: number = 100000): ForwardTestState {
-  const current = loadForwardTestState();
+export function resetVirtualWallet(userId?: string, newStartingBalance: number = 100000): ForwardTestState {
+  const cleanId = cleanUserId(userId);
+  const current = loadForwardTestState(cleanId);
   const resetState: ForwardTestState = {
     ...current,
     wallet: {
@@ -139,6 +161,6 @@ export function resetVirtualWallet(newStartingBalance: number = 100000): Forward
     closedTrades: [],
     lastUpdated: new Date().toISOString(),
   };
-  saveForwardTestState(resetState);
+  saveForwardTestState(resetState, cleanId);
   return resetState;
 }
