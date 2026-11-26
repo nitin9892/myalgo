@@ -687,6 +687,100 @@ export default function AdminPage() {
                 </div>
               </div>
 
+              {/* Step 4: Capital & Risk Management */}
+              <div className="space-y-4 pt-1 p-4 rounded-xl bg-slate-950/70 border border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-[10px] font-bold">4</span>
+                    <label className="text-xs font-bold text-slate-200">Capital & Risk Management</label>
+                  </div>
+                  <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                    Risk per trade: ₹{((btCapital * btRiskPct) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })} ({btRiskPct}%)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Initial Capital Amount */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-slate-300">
+                        Initial Capital / Balance (₹ INR)
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        ₹{btCapital.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">₹</span>
+                      <input
+                        type="number"
+                        min={1000}
+                        max={10000000}
+                        step={5000}
+                        value={btCapital}
+                        onChange={(e) => setBtCapital(Math.max(1000, Number(e.target.value) || 1000))}
+                        className="w-full pl-8 pr-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                        placeholder="100000"
+                      />
+                    </div>
+                    {/* Quick Presets */}
+                    <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                      {[
+                        { label: '₹25K', val: 25000 },
+                        { label: '₹50K', val: 50000 },
+                        { label: '₹1 Lakh', val: 100000 },
+                        { label: '₹2.5 Lakh', val: 250000 },
+                        { label: '₹5 Lakh', val: 500000 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.val}
+                          type="button"
+                          onClick={() => setBtCapital(preset.val)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all ${
+                            btCapital === preset.val
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Risk per Trade (%) */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-slate-300">
+                        Risk per Trade (%)
+                      </label>
+                      <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                        {btRiskPct}% of capital
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[1, 2, 3, 5].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setBtRiskPct(pct)}
+                          className={`py-2 rounded-xl text-xs font-mono font-bold border text-center transition-all ${
+                            btRiskPct === pct
+                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500 font-black'
+                              : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-tight pt-1">
+                      Dynamic sizing: Quantity is automatically calculated based on exact Stop Loss distance.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Action Button: One-Click Instant Backtest */}
               <button
                 type="submit"
@@ -727,9 +821,14 @@ export default function AdminPage() {
                   </span>
                   <span className="text-slate-400">({backtestResult.dataSource})</span>
                 </div>
-                <span className="text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                  {backtestResult.days} Days Window • {backtestResult.symbol} • {backtestResult.timeframe || '5m'}
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-cyan-400 font-mono font-bold bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20">
+                    Capital: ₹{backtestResult.initialCapital.toLocaleString('en-IN')} → ₹{backtestResult.finalCapital.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                    {backtestResult.days} Days • {backtestResult.symbol} • {backtestResult.timeframe || '5m'}
+                  </span>
+                </div>
               </div>
 
               {/* 4 KPI Cards */}
