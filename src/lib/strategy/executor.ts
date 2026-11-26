@@ -1,6 +1,7 @@
 import { getAdminSupabase } from '../supabase';
 import { getBrokerAdapter } from '../brokers';
 import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrategyParams } from './prev_day_breakout';
+import { evaluatePhantomICTStrategy } from './phantom_ict';
 import { 
   getRiskConfiguration, 
   evaluateDailyLossAndKillSwitch, 
@@ -236,15 +237,30 @@ export async function runTradingEngineCycle() {
     }
 
     // ------------------------------------------------------------------------
-    // 4. EVALUATE 5M CANDLE BREAKOUT SETUP
+    // 4. EVALUATE SETUP (Strategy B: Phantom SMC+ICT or Strategy C/A: 6 Setups)
     // ------------------------------------------------------------------------
-    const evalRes = evaluatePrevDayBreakout(
-      candles,
-      levels,
-      strategyParams,
-      activePosState,
-      currentPrice
-    );
+    let evalRes;
+    if (masterStrategy.name === 'Strategy B') {
+      evalRes = evaluatePhantomICTStrategy(
+        candles,
+        activePosState,
+        currentPrice,
+        {
+          riskRewardRatio: 3.5,
+          breakevenTriggerRR: 1.5,
+          trailTriggerRR: 2.5,
+          maxTradesPerDay: strategyParams.maxTradesPerDay || 3,
+        }
+      );
+    } else {
+      evalRes = evaluatePrevDayBreakout(
+        candles,
+        levels,
+        strategyParams,
+        activePosState,
+        currentPrice
+      );
+    }
 
     // 4.1 EXIT TRIGGERS (SL Hit, 1:3 Target Hit, or 15:30 Force Square-Off)
     if (activeTrade && evalRes.exitSignal?.shouldExit) {

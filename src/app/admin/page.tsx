@@ -578,8 +578,8 @@ export default function AdminPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {[
                     { id: 'Strategy C' as const, label: 'Strategy C', desc: '🔥 6 Core Setups (PDH • PDL • PDC • 1:3 RR)' },
+                    { id: 'Strategy B' as const, label: 'Strategy B', desc: '⚡ Phantom AI (SMC + ICT Scalper: BOS • OB • FVG • 1:4 RR)' },
                     { id: 'Strategy A' as const, label: 'Strategy A', desc: 'Slot A: Trend Momentum Breakout' },
-                    { id: 'Strategy B' as const, label: 'Strategy B', desc: 'Slot B: Mean Reversion Range' },
                   ].map((st) => (
                     <button
                       key={st.id}

@@ -589,8 +589,10 @@ export default function DashboardPage() {
           <Link href="/strategies" className="text-[10px] text-cyan-400 hover:underline mt-1.5 inline-block font-semibold truncate max-w-full">
             Scanning: {activeStrategyInfo.symbols.join(', ')} &rarr;
           </Link>
-          <p className="text-[10px] text-emerald-400/90 font-medium mt-0.5">
-            6 Setups (PDH • PDL • PDC) • 1:3 RR
+          <p className="text-[10px] text-emerald-400/90 font-medium mt-0.5 truncate">
+            {activeStrategyInfo.name === 'Strategy B'
+              ? '⚡ Phantom AI (SMC + ICT Scalper: BOS • OB • FVG) • 1:4 RR'
+              : '🔥 6 Setups Engine (PDH • PDL • PDC) • 1:3 RR'}
           </p>
         </div>
 

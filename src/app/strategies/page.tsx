@@ -323,7 +323,7 @@ export default function StrategiesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {([
             { id: 'Strategy A', label: 'Strategy A', tag: 'Slot A: Trend Breakout' },
-            { id: 'Strategy B', label: 'Strategy B', tag: 'Slot B: Mean Reversion' },
+            { id: 'Strategy B', label: 'Strategy B', tag: '⚡ Phantom AI: SMC + ICT Scalper' },
             { id: 'Strategy C', label: 'Strategy C', tag: '🔥 6 Setups Engine (Active Core)' },
           ] as const).map((strat) => {
             const isSelected = selectedStrategy === strat.id;
@@ -351,6 +351,58 @@ export default function StrategiesPage() {
             );
           })}
         </div>
+
+        {/* Strategy B: Project Phantom SMC + ICT Details Card */}
+        {selectedStrategy === 'Strategy B' && (
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-emerald-500/30 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  PROJECT PHANTOM • AI Institutional Scalper
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                1:4 RR Target
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Fully autonomous SMC + ICT AI engine detecting institutional order flow, liquidity sweeps, and high-probability mitigations.
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] pt-1">
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-slate-400 block font-semibold">Market Structure</span>
+                <span className="text-white font-mono font-bold">BOS • CHoCH • MSS</span>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-emerald-400 block font-semibold">Order Blocks</span>
+                <span className="text-emerald-400 font-mono font-bold">Bull / Bear OB</span>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-amber-400 block font-semibold">Liquidity Pools</span>
+                <span className="text-amber-400 font-mono font-bold">SSL & BSL Sweeps</span>
+              </div>
+              <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-cyan-400 block font-semibold">Fair Value Gaps</span>
+                <span className="text-cyan-400 font-mono font-bold">FVG Imbalances</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] text-slate-400">
+              <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                ✓ Auto Breakeven @ 1:1.5 RR
+              </span>
+              <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                ✓ Profit Lock Trailing @ 1:2.5 RR
+              </span>
+              <span className="px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                ✓ Discount / Premium Equilibrium Filter
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* STEP 3: Select Instruments (Multiple Selection Enabled) */}

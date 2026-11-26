@@ -1,4 +1,5 @@
 import { Candle } from '../brokers/types';
+import { evaluatePhantomICTStrategy } from '../strategy/phantom_ict';
 
 export interface BacktestParams {
   strategy?: string;
@@ -419,8 +420,42 @@ export async function runRealMarketBacktest(params: BacktestParams): Promise<Bac
     }
 
     // -------------------------------------------------------------
-    // 3. EVALUATE 6 CORE SETUPS
+    // 3. EVALUATE STRATEGY SETUP (Strategy B: Phantom SMC/ICT vs Strategy C/A: 6 Setups)
     // -------------------------------------------------------------
+    if (params.strategy === 'Strategy B') {
+      const windowCandles = candles.slice(Math.max(0, i - 40), i + 1);
+      const evalRes = evaluatePhantomICTStrategy(windowCandles, null, candle.close, { riskRewardRatio: 3.5 });
+
+      if (evalRes.canEnterNewTrade && evalRes.signal && evalRes.entryPrice && evalRes.stopLoss && evalRes.target) {
+        const triggerSide = evalRes.signal;
+        const setupName = evalRes.setupName || 'Phantom SMC/ICT';
+        const triggerPrice = evalRes.entryPrice;
+        const slPrice = evalRes.stopLoss;
+        const tpPrice = evalRes.target;
+        const slDist = Math.abs(triggerPrice - slPrice);
+
+        if (slDist > 0) {
+          const riskAmount = currentCapital * (params.perTradeRiskPct / 100);
+          const rawQty = Math.max(1, Math.floor(riskAmount / slDist));
+          const quantity = Math.min(100, rawQty);
+
+          inTrade = true;
+          entryCandleIndex = i;
+          activeTrade = {
+            entryTime: new Date(candle.timestamp).toLocaleString(),
+            setupName,
+            side: triggerSide,
+            entryPrice: triggerPrice,
+            stopLoss: slPrice,
+            takeProfit: tpPrice,
+            quantity,
+          };
+          dailyTradeCounts[dayKey] = (dailyTradeCounts[dayKey] || 0) + 1;
+        }
+      }
+      continue;
+    }
+
     const { pdh, pdl, pdc } = levels;
     const isBullish = prevCandle.close > prevCandle.open;
     const isBearish = prevCandle.close < prevCandle.open;
