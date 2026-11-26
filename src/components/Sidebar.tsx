@@ -15,6 +15,7 @@ import {
   X,
   AlertOctagon
 } from 'lucide-react';
+import { useModal } from '@/context/ModalContext';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -31,6 +32,7 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [killSwitchActive, setKillSwitchActive] = useState(false);
+  const { showConfirm, showAlert } = useModal();
 
   useEffect(() => {
     const checkKill = () => {
@@ -61,7 +63,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   };
 
   const handleTriggerKillSwitch = async () => {
-    if (!confirm('EMERGENCY KILL SWITCH: Immediately close all open trades and freeze trading?')) return;
+    const confirmed = await showConfirm({
+      title: 'EMERGENCY KILL SWITCH',
+      message: 'Immediately close all open trades, square off all positions across all brokers, and freeze trading engine?',
+      type: 'danger',
+      confirmText: 'TRIGGER KILL SWITCH',
+    });
+    if (!confirmed) return;
+
     const reason = 'Manual emergency kill switch triggered by user';
     try {
       localStorage.setItem('myalgo_kill_switch', JSON.stringify({ active: true, reason, timestamp: Date.now() }));
@@ -73,13 +82,24 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ triggerEmergencyKill: true }),
       });
-      alert('🚨 Kill Switch Activated! All positions squared off & trading halted.');
+      await showAlert({
+        title: 'Kill Switch Activated',
+        message: 'All positions squared off & trading halted immediately.',
+        type: 'danger',
+      });
       window.location.reload();
     } catch {}
   };
 
   const handleResetKillSwitch = async () => {
-    if (!confirm('Disarm Kill Switch and resume normal trading?')) return;
+    const confirmed = await showConfirm({
+      title: 'Disarm Kill Switch',
+      message: 'Are you sure you want to disarm the Kill Switch and resume normal algorithmic trading?',
+      type: 'warning',
+      confirmText: 'Disarm Kill Switch',
+    });
+    if (!confirmed) return;
+
     try {
       localStorage.removeItem('myalgo_kill_switch');
     } catch {}
@@ -90,7 +110,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resetKillSwitch: true }),
       });
-      alert('Kill Switch Disarmed. Normal trading resumed.');
+      await showAlert({
+        title: 'Kill Switch Disarmed',
+        message: 'Normal algorithmic trading has been resumed.',
+        type: 'success',
+      });
       window.location.reload();
     } catch {}
   };

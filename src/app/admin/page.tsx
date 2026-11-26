@@ -26,6 +26,7 @@ import {
   Zap
 } from 'lucide-react';
 import Link from 'next/link';
+import { useModal } from '@/context/ModalContext';
 
 interface TokenItem {
   id: string;
@@ -39,6 +40,7 @@ interface TokenItem {
 }
 
 export default function AdminPage() {
+  const { showAlert } = useModal();
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [passcode, setPasscode] = useState('');
@@ -168,15 +170,27 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`✅ Access code [${newTokenCode}] generated successfully!`);
+        await showAlert({
+          title: 'Access Code Generated',
+          message: `Access code [${newTokenCode}] generated successfully!`,
+          type: 'success',
+        });
         setNewTokenCode('');
         setNewTokenLabel('');
         fetchTokens(emailToUse);
       } else {
-        alert(data.error || 'Failed to create token');
+        await showAlert({
+          title: 'Token Generation Failed',
+          message: data.error || 'Failed to create token',
+          type: 'danger',
+        });
       }
     } catch (err: any) {
-      alert(err.message);
+      await showAlert({
+        title: 'Error',
+        message: err.message,
+        type: 'danger',
+      });
     } finally {
       setCreatingToken(false);
     }

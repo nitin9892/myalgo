@@ -6,12 +6,14 @@ import { Sidebar } from '@/components/Sidebar';
 import { AccessGuard } from '@/components/AccessGuard';
 import { Menu, Activity, AlertOctagon } from 'lucide-react';
 import Link from 'next/link';
+import { useModal } from '@/context/ModalContext';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [killSwitchActive, setKillSwitchActive] = useState(false);
   const isAdminPath = pathname.startsWith('/admin');
+  const { showConfirm, showAlert } = useModal();
 
   useEffect(() => {
     const checkKill = () => {
@@ -36,7 +38,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleResetKillSwitch = async () => {
-    if (!confirm('Disarm Kill Switch and resume normal trading?')) return;
+    const confirmed = await showConfirm({
+      title: 'Disarm Kill Switch',
+      message: 'Are you sure you want to disarm the Kill Switch and resume normal trading?',
+      type: 'warning',
+      confirmText: 'Disarm Kill Switch',
+    });
+    if (!confirmed) return;
     try {
       localStorage.removeItem('myalgo_kill_switch');
     } catch {}
@@ -47,7 +55,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resetKillSwitch: true }),
       });
-      alert('Kill Switch Disarmed.');
+      await showAlert({
+        title: 'Kill Switch Disarmed',
+        message: 'Normal trading has resumed successfully.',
+        type: 'success',
+      });
       window.location.reload();
     } catch {}
   };

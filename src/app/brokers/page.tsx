@@ -17,8 +17,10 @@ import {
   ArrowRightLeft,
   PowerOff,
   Coins,
-  Settings
+  Settings,
+  Copy
 } from 'lucide-react';
+import { useModal } from '@/context/ModalContext';
 
 interface BrokerConfig {
   id: 'DHAN' | 'DELTA' | 'METATRADER';
@@ -35,6 +37,8 @@ interface BrokerConfig {
 }
 
 export default function BrokersPage() {
+  const { showConfirm, showAlert } = useModal();
+  const [copiedIp, setCopiedIp] = useState(false);
   const [testingBroker, setTestingBroker] = useState<string | null>(null);
   const [firingOrder, setFiringOrder] = useState<string | null>(null);
   const [showEditCredentials, setShowEditCredentials] = useState(false);
@@ -178,6 +182,14 @@ export default function BrokersPage() {
     });
   };
 
+  const handleCopyIp = async (ip: string) => {
+    try {
+      await navigator.clipboard.writeText(ip);
+      setCopiedIp(true);
+      setTimeout(() => setCopiedIp(false), 2500);
+    } catch {}
+  };
+
   const testConnection = async (brokerId: string) => {
     setTestingBroker(brokerId);
     try {
@@ -204,18 +216,37 @@ export default function BrokersPage() {
         } catch {}
         return updated;
       });
+
+      if (!data.success) {
+        await showAlert({
+          title: 'Broker Connection Notice',
+          message: data.message,
+          type: 'warning',
+        });
+      }
     } catch (err: any) {
       setTestStatus((prev) => ({
         ...prev,
         [brokerId]: { success: false, message: err.message },
       }));
+      await showAlert({
+        title: 'Connection Error',
+        message: err.message || 'Network error occurred while connecting.',
+        type: 'danger',
+      });
     } finally {
       setTestingBroker(null);
     }
   };
 
-  const handleDisconnectBroker = (brokerId: string) => {
-    if (!confirm(`Disconnect ${brokerId}? All brokers will be displayed again.`)) {
+  const handleDisconnectBroker = async (brokerId: string) => {
+    const confirmed = await showConfirm({
+      title: 'Disconnect Broker',
+      message: `Disconnect ${brokerId}? All brokers will be displayed again.`,
+      type: 'warning',
+      confirmText: 'Disconnect',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -231,7 +262,13 @@ export default function BrokersPage() {
 
   const fireDirectOrder = async (broker: BrokerConfig, customSymbol?: string) => {
     const symbolToTrade = customSymbol || selectedCryptoSymbol || broker.defaultSymbol;
-    if (!confirm(`Place 100x Leverage LIVE BUY order on ${broker.name} for 1 ${symbolToTrade}?`)) {
+    const confirmed = await showConfirm({
+      title: 'Confirm 100x Test Order',
+      message: `Place 100x Leverage LIVE BUY order on ${broker.name} for 1 ${symbolToTrade}?`,
+      type: 'warning',
+      confirmText: 'Punch Order',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -255,11 +292,22 @@ export default function BrokersPage() {
         ...prev,
         [broker.id]: { success: data.success, message: data.message || (data.success ? `100x Test Order placed for ${symbolToTrade}!` : 'Order Failed') },
       }));
+
+      await showAlert({
+        title: data.success ? '100x Order Executed' : 'Order Failed',
+        message: data.message || (data.success ? `100x Test Order placed for ${symbolToTrade}!` : 'Order Failed'),
+        type: data.success ? 'success' : 'danger',
+      });
     } catch (err: any) {
       setOrderStatus((prev) => ({
         ...prev,
         [broker.id]: { success: false, message: err.message },
       }));
+      await showAlert({
+        title: 'Order Placement Error',
+        message: err.message,
+        type: 'danger',
+      });
     } finally {
       setFiringOrder(null);
     }
@@ -512,14 +560,40 @@ export default function BrokersPage() {
                   <RefreshCw className={`w-3.5 h-3.5 ${testingBroker === broker.id ? 'animate-spin' : ''}`} />
                   {testingBroker === broker.id ? 'Connecting to Broker...' : 'Connect & Verify Account'}
                 </button>
-
-                {status && !status.success && (
-                  <div className="text-xs text-rose-400 flex items-center gap-1.5">
-                    <XCircle className="w-4 h-4 shrink-0" />
-                    <span>{status.message}</span>
-                  </div>
-                )}
               </div>
+
+              {/* Enhanced Error / IP Whitelist Box */}
+              {status && !status.success && (() => {
+                const ipMatch = status.message?.match(/\[\s*([0-9a-fA-F:.]+)\s*\]/);
+                const detectedIp = ipMatch ? ipMatch[1] : null;
+
+                return (
+                  <div className="mt-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                      <XCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                      <div className="text-xs leading-relaxed whitespace-pre-line font-medium text-rose-200">
+                        {status.message}
+                      </div>
+                    </div>
+
+                    {detectedIp && (
+                      <div className="pt-2 border-t border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs text-slate-300 font-mono">
+                          Detected Server IP: <span className="text-emerald-400 font-bold bg-slate-950 px-2 py-0.5 rounded border border-slate-800">{detectedIp}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyIp(detectedIp)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold transition-all active:scale-95 shadow"
+                        >
+                          {copiedIp ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copiedIp ? 'Copied to Clipboard!' : `Copy IP: ${detectedIp}`}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AppShell } from '@/components/AppShell';
+import { ModalProvider } from '@/context/ModalContext';
 
 export const metadata: Metadata = {
   title: 'MyAlgo | Automated Trading Engine',
@@ -15,9 +16,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="bg-slate-950 text-slate-100 min-h-screen antialiased">
-        <AppShell>
-          {children}
-        </AppShell>
+        <ModalProvider>
+          <AppShell>
+            {children}
+          </AppShell>
+        </ModalProvider>
       </body>
     </html>
   );

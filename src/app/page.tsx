@@ -25,6 +25,7 @@ import {
   Power
 } from 'lucide-react';
 import Link from 'next/link';
+import { useModal } from '@/context/ModalContext';
 
 function formatDisplayBalance(brokerData: any): string {
   if (!brokerData) return 'Connected (Live)';
@@ -50,6 +51,7 @@ function formatDisplayBalance(brokerData: any): string {
 }
 
 export default function DashboardPage() {
+  const { showConfirm, showAlert } = useModal();
   const [isRunningCycle, setIsRunningCycle] = useState(false);
   const [cycleResult, setCycleResult] = useState<any>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -269,7 +271,14 @@ export default function DashboardPage() {
 
   // Emergency Kill Switch trigger from Dashboard
   const handleTriggerKillSwitch = async () => {
-    if (!confirm('EMERGENCY KILL SWITCH: Immediately close all open trades and freeze trading?')) return;
+    const confirmed = await showConfirm({
+      title: 'EMERGENCY KILL SWITCH',
+      message: 'Immediately close all open trades, square off all positions across all brokers, and freeze trading engine?',
+      type: 'danger',
+      confirmText: 'TRIGGER KILL SWITCH',
+    });
+    if (!confirmed) return;
+
     const reason = 'Manual emergency kill switch triggered from Dashboard';
     try {
       localStorage.setItem('myalgo_kill_switch', JSON.stringify({ active: true, reason, timestamp: Date.now() }));
@@ -282,14 +291,25 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ triggerEmergencyKill: true }),
       });
-      alert('🚨 Kill Switch Activated! All positions squared off & trading halted.');
+      await showAlert({
+        title: 'Kill Switch Activated',
+        message: 'All positions squared off & trading halted immediately.',
+        type: 'danger',
+      });
       await fetchDashboardData();
     } catch {}
   };
 
   // Emergency Kill Switch reset from Dashboard
   const handleResetKillSwitch = async () => {
-    if (!confirm('Disarm Kill Switch and resume normal trading?')) return;
+    const confirmed = await showConfirm({
+      title: 'Disarm Kill Switch',
+      message: 'Are you sure you want to disarm the Kill Switch and resume normal trading?',
+      type: 'warning',
+      confirmText: 'Disarm Kill Switch',
+    });
+    if (!confirmed) return;
+
     try {
       localStorage.removeItem('myalgo_kill_switch');
     } catch {}
@@ -301,16 +321,24 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ resetKillSwitch: true }),
       });
-      alert('Kill Switch Disarmed. Normal trading resumed.');
+      await showAlert({
+        title: 'Kill Switch Disarmed',
+        message: 'Normal algorithmic trading has been resumed.',
+        type: 'success',
+      });
       await fetchDashboardData();
     } catch {}
   };
 
   // Emergency Square Off single position
   const handleSquareOff = async (pos: any) => {
-    if (!confirm(`Are you sure you want to Square Off position ${pos.side} ${pos.quantity} ${pos.symbol}?`)) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: 'Confirm Square Off',
+      message: `Are you sure you want to Square Off position ${pos.side} ${pos.quantity} ${pos.symbol}?`,
+      type: 'danger',
+      confirmText: 'Square Off Position',
+    });
+    if (!confirmed) return;
 
     setSquaringOffId(pos.id);
     try {
@@ -333,11 +361,19 @@ export default function DashboardPage() {
       });
 
       const data = await res.json();
-      alert(data.message || 'Position squared off!');
+      await showAlert({
+        title: data.success ? 'Position Squared Off' : 'Notice',
+        message: data.message || 'Position squared off!',
+        type: data.success ? 'success' : 'warning',
+      });
       await fetchDashboardData();
       await syncLiveBrokerBalance();
     } catch (err: any) {
-      alert(`Square-off failed: ${err.message}`);
+      await showAlert({
+        title: 'Square-off Failed',
+        message: `Square-off failed: ${err.message}`,
+        type: 'danger',
+      });
     } finally {
       setSquaringOffId(null);
     }

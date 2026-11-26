@@ -12,6 +12,7 @@ import {
   Trash2, 
   Search 
 } from 'lucide-react';
+import { useModal } from '@/context/ModalContext';
 
 interface LogEntry {
   id: string;
@@ -23,6 +24,7 @@ interface LogEntry {
 }
 
 export default function LogsPage() {
+  const { showConfirm } = useModal();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<string>('ALL');
@@ -58,7 +60,13 @@ export default function LogsPage() {
   };
 
   const handleClearLogs = async () => {
-    if (!confirm('Are you sure you want to clear the audit logs?')) return;
+    const confirmed = await showConfirm({
+      title: 'Clear Audit Logs',
+      message: 'Are you sure you want to clear the audit logs? This action cannot be undone.',
+      type: 'danger',
+      confirmText: 'Clear Logs',
+    });
+    if (!confirmed) return;
     try {
       await fetch('/api/logs', { method: 'DELETE' });
       setLogs([]);

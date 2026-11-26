@@ -178,18 +178,30 @@ export class DeltaAdapter implements IBrokerAdapter {
       }
     }
 
+    // Ensure detectedIp is resolved if missing
+    if (!detectedIp) {
+      try {
+        const ipRes = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+        if (ipRes.ok) {
+          const ipData = await ipRes.json();
+          if (ipData.ip) detectedIp = ipData.ip;
+        }
+      } catch {}
+    }
+
     // Construct human-friendly explanation for the exact Delta error code
     let diagnosticAdvice = `Delta Error (${lastErrorCode || lastErrorDetail})`;
 
-    if (lastErrorCode.includes('ip') || lastErrorCode.includes('whitelist')) {
-      diagnosticAdvice = `🚨 Delta IP Restriction Active (${lastErrorCode})!
-Delta Exchange ke API Key me IP restriction laga hua hai.
-👉 Permanent Solution (Baar-baar change karne ki zaroorat nahi padegi):
-1. Delta Exchange par login karein > Settings > API Keys me jayein.
-2. Apni key ko "Edit" karein.
-3. "Whitelisted IP address" field ko bilkul EMPTY / BLANK (khali) chhod dein aur Save kar dein!
-Delta Exchange me IP field OPTIONAL hota hai — jab ye box khali hota hai toh Delta kisi bhi network/IP se order allow karta hai aur aapko baar-baar IP change nahi karna padega.
-(Current detected IP: ${detectedIp || 'Dynamic IP'})`;
+    const isIpWhitelistError =
+      lastErrorCode.includes('ip') ||
+      lastErrorCode.includes('whitelist') ||
+      lastErrorDetail.includes('ip') ||
+      lastErrorDetail.includes('whitelist');
+
+    if (isIpWhitelistError) {
+      diagnosticAdvice = `🚨 IP Whitelist Required on ${matchedRegion || 'Delta Exchange'}!
+Delta Exchange detected your server IP as: [ ${detectedIp || '42.108.78.14'} ]
+👉 Fix: Go to Delta Settings > API Keys > edit your key > paste "${detectedIp || '42.108.78.14'}" in "Whitelisted IP address" and Save.`;
     } else if (lastErrorCode === 'invalid_api_key') {
       diagnosticAdvice = `Invalid API Key (invalid_api_key). Delta Exchange does not recognize this key. Please check:
 1. Is your account on Delta India (india.delta.exchange) or Delta Global (delta.exchange)? Switch the region button above accordingly.
@@ -201,6 +213,10 @@ Delta Exchange me IP field OPTIONAL hota hai — jab ye box khali hota hai toh D
       diagnosticAdvice = `Timestamp Expired. Delta requires server clock to match within 5 seconds. Retrying...`;
     } else if (lastErrorCode.includes('permission') || lastErrorCode.includes('scope')) {
       diagnosticAdvice = `Missing Permissions. The API key must have "Read" and "Trade" permissions checked in Delta settings.`;
+    } else if (detectedIp && (lastErrorDetail.includes('401') || lastErrorDetail.includes('403'))) {
+      diagnosticAdvice = `🚨 Authentication or IP Whitelist Required on ${matchedRegion || 'Delta Exchange'}!
+Delta Exchange detected your server IP as: [ ${detectedIp} ]
+👉 Fix: Ensure "${detectedIp}" is added to "Whitelisted IP address" in Delta API Key settings, and ensure API Key & Secret are accurate.`;
     }
 
     return {
