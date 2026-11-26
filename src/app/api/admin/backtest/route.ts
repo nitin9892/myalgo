@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     }
 
     const params: BacktestParams = {
+      strategy: body.strategy || 'Strategy C',
       symbol: body.symbol || 'BTCUSD',
       timeframe: body.timeframe || '5m',
       days: Math.min(60, Math.max(1, Number(body.days || 7))),

@@ -54,6 +54,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'TOKENS' | 'BACKTEST'>('TOKENS');
 
   // Real Market Backtest State (Admin Exclusive)
+  const [btStrategy, setBtStrategy] = useState<'Strategy A' | 'Strategy B' | 'Strategy C'>('Strategy C');
   const [btSymbol, setBtSymbol] = useState('BTCUSD');
   const [btTimeframe, setBtTimeframe] = useState<'5m' | '15m' | '1h'>('5m');
   const [btDays, setBtDays] = useState(7);
@@ -222,6 +223,7 @@ export default function AdminPage() {
           'x-admin-email': emailToUse,
         },
         body: JSON.stringify({
+          strategy: btStrategy,
           symbol: btSymbol,
           timeframe: btTimeframe,
           days: btDays,
@@ -553,133 +555,139 @@ export default function AdminPage() {
             </div>
 
             <form onSubmit={handleRunBacktest} className="space-y-5">
-              {/* Row 1: Symbol & Lookback */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Symbol Selection */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300">Target Instrument</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'].map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setBtSymbol(s)}
-                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
-                          btSymbol === s
-                            ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-black shadow-md'
-                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {s.replace('USD', '')}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Duration / Lookback Days */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300">Lookback Period</label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[3, 7, 14, 30].map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => setBtDays(d)}
-                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
-                          btDays === d
-                            ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-md'
-                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {d} Days
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2: Capital, Risk %, Leverage */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">Initial Capital (INR ₹)</label>
-                  <input
-                    type="number"
-                    value={btCapital}
-                    onChange={(e) => setBtCapital(Number(e.target.value))}
-                    min="1000"
-                    step="5000"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm focus:border-cyan-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">Risk per Trade (%)</label>
-                  <input
-                    type="number"
-                    value={btRiskPct}
-                    onChange={(e) => setBtRiskPct(Number(e.target.value))}
-                    min="1"
-                    max="20"
-                    step="0.5"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-sm focus:border-cyan-500 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300">Leverage</label>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[10, 25, 50, 100].map((lev) => (
-                      <button
-                        key={lev}
-                        type="button"
-                        onClick={() => setBtLeverage(lev)}
-                        className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
-                          btLeverage === lev
-                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-black shadow-md'
-                            : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        {lev}x
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Strategy Rules Note */}
-              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              {/* Step 1: Select Strategy */}
+              <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>
-                    <strong>Rule Set:</strong> 6 Core Setups (PDH, PDL, PDC) • 1:3 RR • Signal Candle SL • Max 3 Trades/Day • 5m Feed
-                  </span>
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-[10px] font-bold">1</span>
+                  <label className="text-xs font-bold text-slate-200">Select Strategy</label>
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={btTrailing}
-                    onChange={(e) => setBtTrailing(e.target.checked)}
-                    className="accent-emerald-500"
-                  />
-                  <span>Trailing Stop (+3 pts / 10 pts)</span>
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { id: 'Strategy C' as const, label: 'Strategy C', desc: '🔥 6 Core Setups (PDH • PDL • PDC • 1:3 RR)' },
+                    { id: 'Strategy A' as const, label: 'Strategy A', desc: 'Slot A: Trend Momentum Breakout' },
+                    { id: 'Strategy B' as const, label: 'Strategy B', desc: 'Slot B: Mean Reversion Range' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setBtStrategy(st.id)}
+                      className={`p-3 rounded-xl text-left border transition-all ${
+                        btStrategy === st.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-lg shadow-emerald-500/20'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm text-white">{st.label}</span>
+                        {btStrategy === st.id && <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">{st.desc}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Action Button */}
+              {/* Step 2: Select Timeframe */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center text-[10px] font-bold">2</span>
+                  <label className="text-xs font-bold text-slate-200">Select Time Frame</label>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {[
+                    { tf: '5m' as const, label: '5 Minute (5m)', tag: 'Intraday Core Scalp' },
+                    { tf: '15m' as const, label: '15 Minute (15m)', tag: 'Swing Momentum' },
+                    { tf: '1h' as const, label: '1 Hour (1h)', tag: 'Higher Trend' },
+                  ].map((t) => (
+                    <button
+                      key={t.tf}
+                      type="button"
+                      onClick={() => setBtTimeframe(t.tf)}
+                      className={`p-3 rounded-xl text-center border font-bold text-xs transition-all flex flex-col items-center justify-center gap-1 ${
+                        btTimeframe === t.tf
+                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-lg shadow-cyan-500/20'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="font-mono text-sm text-white">{t.label}</span>
+                      <span className="text-[10px] text-cyan-400">{t.tag}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 3: Select Pairs */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold">3</span>
+                    <label className="text-xs font-bold text-slate-200">Select Pair / Coin</label>
+                  </div>
+                  <span className="text-xs text-amber-400 font-mono font-bold">Active: {btSymbol}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {[
+                    { id: 'BTCUSD', name: 'Bitcoin', tag: 'BTC / USD' },
+                    { id: 'ETHUSD', name: 'Ethereum', tag: 'ETH / USD' },
+                    { id: 'SOLUSD', name: 'Solana', tag: 'SOL / USD' },
+                    { id: 'XRPUSD', name: 'Ripple', tag: 'XRP / USD' },
+                  ].map((coin) => (
+                    <button
+                      key={coin.id}
+                      type="button"
+                      onClick={() => setBtSymbol(coin.id)}
+                      className={`p-3.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 ${
+                        btSymbol === coin.id
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-lg shadow-amber-500/20'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className="font-mono text-base font-bold text-white">{coin.tag}</span>
+                      <span className="text-[10px] text-slate-400">{coin.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lookback Period */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">Lookback Window</label>
+                  <span className="text-xs text-slate-400 font-mono">Simulating over past {btDays} Days Real Feeds</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[3, 7, 14, 30].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setBtDays(d)}
+                      className={`py-2 rounded-xl text-xs font-mono font-bold border transition-all ${
+                        btDays === d
+                          ? 'bg-slate-200 text-slate-950 border-white font-black shadow-md'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      {d} Days
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Button: One-Click Instant Backtest */}
               <button
                 type="submit"
                 disabled={runningBacktest}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-cyan-500 to-emerald-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99]"
+                className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-500 via-cyan-500 to-emerald-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-sm transition-all shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.99]"
               >
                 {runningBacktest ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>Fetching Real Market Feed & Simulating Trades...</span>
+                    <RefreshCw className="w-5 h-5 animate-spin text-slate-950" />
+                    <span>Evaluating {btStrategy} on {btSymbol} ({btTimeframe})...</span>
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4 fill-slate-950" />
-                    <span>Run Backtest on Real Market Data ({btSymbol} • {btDays} Days)</span>
+                    <Play className="w-5 h-5 fill-slate-950" />
+                    <span>Run Backtest: {btStrategy} • {btTimeframe} • {btSymbol} ({btDays} Days)</span>
                   </>
                 )}
               </button>
@@ -701,12 +709,12 @@ export default function AdminPage() {
                 <div className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-emerald-400" />
                   <span className="font-semibold text-white">
-                    Verified on {backtestResult.totalCandles} Real 5-Minute Candles
+                    {backtestResult.strategy || 'Strategy C'} Verified on {backtestResult.totalCandles} Real {backtestResult.timeframe || '5m'} Candles
                   </span>
                   <span className="text-slate-400">({backtestResult.dataSource})</span>
                 </div>
-                <span className="text-slate-400 font-mono">
-                  {backtestResult.days} Days Window • {backtestResult.symbol}
+                <span className="text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                  {backtestResult.days} Days Window • {backtestResult.symbol} • {backtestResult.timeframe || '5m'}
                 </span>
               </div>
 

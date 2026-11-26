@@ -1,6 +1,7 @@
 import { Candle } from '../brokers/types';
 
 export interface BacktestParams {
+  strategy?: string;
   symbol: string;
   timeframe: '5m' | '15m' | '1h';
   days: number;
@@ -31,6 +32,7 @@ export interface BacktestTrade {
 }
 
 export interface BacktestResult {
+  strategy: string;
   symbol: string;
   timeframe: string;
   days: number;
@@ -377,6 +379,7 @@ export async function runRealMarketBacktest(params: BacktestParams): Promise<Bac
   const avgTradePnl = totalTrades > 0 ? Number((netPnl / totalTrades).toFixed(2)) : 0;
 
   return {
+    strategy: params.strategy || 'Strategy C',
     symbol: params.symbol,
     timeframe: params.timeframe,
     days: params.days,
