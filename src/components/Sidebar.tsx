@@ -20,7 +20,6 @@ import { useModal } from '@/context/ModalContext';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Strategy Engine', href: '/strategies', icon: Cpu },
   { name: 'Forward Testing', href: '/forward-test', icon: PlayCircle },
   { name: 'Brokers & APIs', href: '/brokers', icon: Wallet },
   { name: 'Logs & Audit', href: '/logs', icon: Terminal },

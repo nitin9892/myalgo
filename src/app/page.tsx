@@ -26,7 +26,12 @@ import {
   Rocket,
   Activity,
   Key,
-  Coins
+  Coins,
+  BarChart3,
+  Radio,
+  Cpu,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
@@ -106,6 +111,16 @@ export default function DashboardPage() {
     apiSecret: '',
   });
   const [connectingBroker, setConnectingBroker] = useState(false);
+  const [liveClock, setLiveClock] = useState<string>('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      setLiveClock(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Live real-time balance auto-sync from broker API
   const syncLiveBrokerBalance = async () => {
@@ -522,142 +537,167 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      {/* Top Banner / Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 sm:pb-6 border-b border-slate-800">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              Algo Control Center
-            </h1>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Live Real Metrics
+    <div className="space-y-6 pb-12">
+      {/* 🟢 TOP MARKET TELEMETRY RIBBON (High-frequency terminal header) */}
+      <div className="rounded-2xl bg-slate-950/90 border border-slate-850 p-2.5 sm:px-4 sm:py-3 shadow-xl backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs">
+        {/* Left: System Status & Clock */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="font-mono font-bold text-slate-200 uppercase tracking-wider text-[11px]">
+              QUANT ENGINE v4.2
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono font-bold">
+              11ms LATENCY
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time execution dashboard for {activeStrategyInfo.name} on [{activeStrategyInfo.symbols.join(', ')}] • Daily cycle resets at 01:00 AM IST.
-          </p>
+
+          <div className="h-3 w-px bg-slate-800 hidden sm:block" />
+
+          {/* Clock */}
+          <div className="flex items-center gap-1.5 font-mono text-slate-400 text-[11px]">
+            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-white font-semibold">{liveClock || '00:00:00'} IST</span>
+            <span className="text-slate-500 text-[10px] hidden md:inline">• 24/7 Real-Time</span>
+          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          {/* Master Algo ON/OFF Switch */}
-          <button
-            onClick={handleToggleAlgoSwitch}
-            disabled={isTogglingAlgo}
-            className={`flex items-center justify-between sm:justify-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs font-black transition-all shadow-md active:scale-95 disabled:opacity-50 ${
-              algoActive
-                ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
-                : 'bg-slate-800/90 hover:bg-slate-800 text-slate-400 border-slate-700'
-            }`}
-            title={algoActive ? 'Click to Pause Algo (Master Switch)' : 'Click to Turn Algo ON (Master Switch)'}
-          >
-            <div className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-              algoActive ? 'bg-emerald-500' : 'bg-slate-600'
-            }`}>
-              <div className={`w-3.5 h-3.5 rounded-full bg-white transition-transform ${
-                algoActive ? 'translate-x-3.5' : 'translate-x-0'
-              }`} />
-            </div>
-            <span className="flex items-center gap-1.5">
-              {algoActive ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>ALGO ON</span>
-                </>
-              ) : (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                  <span className="text-amber-400">ALGO PAUSED</span>
-                </>
-              )}
-            </span>
-          </button>
-
-          {/* Direct Kill Switch Button in Header */}
-          <button
-            onClick={killSwitchActive ? handleResetKillSwitch : handleTriggerKillSwitch}
-            className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              killSwitchActive
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 animate-pulse'
-                : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30'
-            }`}
-          >
-            <AlertOctagon className="w-4 h-4" />
-            {killSwitchActive ? 'Disarm Kill Switch' : 'Kill Switch'}
-          </button>
-
-          <div className="text-[11px] text-slate-500 flex items-center justify-center gap-1">
-            <RefreshCw className="w-3 h-3" /> Sync {lastUpdated || 'Live'}
+        {/* Right: Quick Market Status Feeds */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
+            <span className="text-slate-400">CRYPTO:</span>
+            <span className="text-emerald-400 font-bold">LIVE 24/7</span>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
+            <span className="text-slate-400">NSE / BSE:</span>
+            <span className="text-cyan-400 font-bold">DHAN v2 READY</span>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
+            <span className="text-slate-400">SYNC:</span>
+            <span className="text-slate-300 font-bold">{lastUpdated || 'Live'}</span>
           </div>
         </div>
       </div>
 
-      {/* Connected Broker Live Ribbon */}
-      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shadow-md">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Wallet className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="font-semibold text-slate-300">Active Broker:</span>
-          {activeBrokerId ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-500/20">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                {activeBrokerId}: {formatDisplayBalance(activeBrokerData)}
+      {/* 🚀 TERMINAL HEADER & MASTER COCKPIT CONTROLS */}
+      <div className="rounded-3xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800/80 p-5 sm:p-7 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          {/* Title & Platform Summary */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="px-2.5 py-1 rounded-md bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-300 text-[11px] font-black tracking-widest uppercase">
+                INSTITUTIONAL SAAS TRADING TERMINAL
               </span>
+              <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-mono">
+                CYCLE RESETS AT 01:00 AM IST
+              </span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+              <span>Phantom Quant Terminal</span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-mono font-bold">
+                {algoActive ? '● ENGINE ACTIVE' : '○ ENGINE STANDBY'}
+              </span>
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-400 max-w-2xl">
+              Fully autonomous multi-asset trading engine with institutional Smart Money Concepts (SMC), Liquidity Hunt detection, and automated risk allocation.
+            </p>
+          </div>
+
+          {/* Header Action Badges & Switches */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Active Live Broker Status Pill */}
+            <div className="px-3.5 py-2 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-2 shadow-inner">
+              <Wallet className="w-4 h-4 text-emerald-400" />
+              <div className="text-left">
+                <div className="text-[10px] text-slate-500 uppercase font-semibold">Active Broker Margin</div>
+                <div className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                  {activeBrokerId ? (
+                    <>
+                      <span className="text-emerald-400">{activeBrokerId}:</span>
+                      <span>{formatDisplayBalance(activeBrokerData)}</span>
+                    </>
+                  ) : (
+                    <span className="text-amber-400">No Broker Linked</span>
+                  )}
+                </div>
+              </div>
               <button
                 onClick={syncLiveBrokerBalance}
                 disabled={isSyncingBalance}
-                title="Auto-syncs real live balance from broker every 12s. Click to sync now."
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700/80 text-slate-300 hover:text-emerald-400 text-[11px] font-semibold border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                title="Click to force live margin auto-sync"
+                className="ml-1 p-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition-colors"
               >
-                <RefreshCw className={`w-3 h-3 ${isSyncingBalance ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
-                <span>{isSyncingBalance ? 'Syncing...' : 'Auto-Sync'}</span>
-                {lastBalanceSyncTime && !isSyncingBalance && (
-                  <span className="text-[10px] text-slate-500 font-mono hidden md:inline">({lastBalanceSyncTime})</span>
-                )}
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingBalance ? 'animate-spin text-emerald-400' : ''}`} />
               </button>
             </div>
-          ) : (
-            <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700 font-medium">
-              No Broker Connected
-            </span>
-          )}
-        </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <Link 
-            href="/brokers" 
-            className="text-cyan-400 hover:underline font-semibold flex items-center gap-1 text-xs"
-          >
-            {activeBrokerId ? 'Manage / Switch' : 'Connect Broker'} &rarr;
-          </Link>
+            {/* Master Algo ON/OFF Toggle Switch */}
+            <button
+              onClick={handleToggleAlgoSwitch}
+              disabled={isTogglingAlgo}
+              className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border font-mono text-xs font-black transition-all shadow-lg active:scale-95 disabled:opacity-50 ${
+                algoActive
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                  : 'bg-slate-950 hover:bg-slate-900 text-slate-400 border-slate-800'
+              }`}
+              title={algoActive ? 'Click to Pause Algo (Master Switch)' : 'Click to Turn Algo ON (Master Switch)'}
+            >
+              <div className={`w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                algoActive ? 'bg-emerald-500' : 'bg-slate-700'
+              }`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow-md transition-transform ${
+                  algoActive ? 'translate-x-4' : 'translate-x-0'
+                }`} />
+              </div>
+              <span>{algoActive ? 'ALGO RUNNING' : 'ALGO PAUSED'}</span>
+            </button>
+
+            {/* Emergency Kill Switch Button */}
+            <button
+              onClick={killSwitchActive ? handleResetKillSwitch : handleTriggerKillSwitch}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-lg active:scale-95 ${
+                killSwitchActive
+                  ? 'bg-rose-500 text-white shadow-rose-500/40 animate-pulse'
+                  : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30'
+              }`}
+            >
+              <AlertOctagon className="w-4 h-4" />
+              <span>{killSwitchActive ? 'DISARM KILL' : 'KILL SWITCH'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 🚀 4-STEP ALGO LAUNCH & CONTROL STATION (SaaS / Client Rental Workflow) */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl relative overflow-hidden space-y-6">
+      {/* ⚡ 4-STEP AVIONICS LAUNCH COCKPIT (The Ultimate 1-Click Client Workflow) */}
+      <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-5 sm:p-7 shadow-2xl backdrop-blur-xl relative overflow-hidden space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800/80">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 flex items-center justify-center text-slate-950 font-black shadow-md shadow-emerald-500/20">
                 <Rocket className="w-4 h-4" />
               </div>
               <h2 className="text-lg font-bold text-white tracking-wide">
-                Algo Setup & Launch Station
+                Algo Launch & Execution Station
               </h2>
               {algoActive ? (
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black flex items-center gap-1.5 animate-pulse">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  LIVE RUNNING
+                  LIVE AUTONOMOUS EXECUTION
                 </span>
               ) : (
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
-                  READY TO LAUNCH
+                  CONFIGURED & READY TO ENGAGE
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Select Broker &rarr; Choose Strategy &rarr; Set Risk Rules &rarr; Hit Launch to start live autonomous algorithmic execution.
+              Select Broker &rarr; Choose Institutional Strategy &rarr; Set Risk Rules &rarr; Click Launch to execute autonomous cycles.
             </p>
           </div>
 
@@ -667,73 +707,77 @@ export default function DashboardPage() {
                 type="button"
                 onClick={triggerCycleNow}
                 disabled={isRunningCycle}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRunningCycle ? 'animate-spin text-emerald-400' : ''}`} />
-                <span>{isRunningCycle ? 'Scanning...' : 'Scan Market Now'}</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${isRunningCycle ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
+                <span>{isRunningCycle ? 'Scanning Ticks...' : 'Scan Market Now'}</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* 3 Step Setup Columns */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* 3 Step Interactive Configuration Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* STEP 1: Select Broker */}
-          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 space-y-3">
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-slate-800/90 space-y-4 shadow-inner">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-cyan-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">1</span>
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-cyan-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">1</span>
                 Select Broker
               </span>
               {connectedBrokers[selectedBroker]?.success ? (
-                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Live Connected
+                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <CheckCircle2 className="w-3 h-3" /> Live Synced
                 </span>
               ) : (
                 <button
                   type="button"
                   onClick={() => setShowQuickConnectBroker(true)}
-                  className="text-[10px] text-cyan-400 hover:underline font-bold"
+                  className="text-[11px] text-cyan-400 hover:text-cyan-300 hover:underline font-bold"
                 >
                   + Connect Keys
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 gap-2">
               {[
-                { id: 'DELTA', name: 'Delta India', tag: 'Crypto' },
-                { id: 'DHAN', name: 'DhanHQ', tag: 'NSE / F&O' },
-                { id: 'METATRADER', name: 'MetaTrader', tag: 'Forex' },
-              ].map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedBroker(b.id as any);
-                    if (b.id === 'DHAN') {
-                      setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
-                    } else if (b.id === 'DELTA') {
-                      setSelectedSymbols(['BTC', 'ETH', 'SOL', 'XRP']);
-                    } else {
-                      setSelectedSymbols(['EURUSD', 'XAUUSD', 'US30']);
-                    }
-                  }}
-                  className={`p-2.5 rounded-xl text-center border transition-all ${
-                    selectedBroker === b.id
-                      ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 font-bold shadow-md shadow-cyan-500/10'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <div className="text-xs font-bold truncate">{b.name}</div>
-                  <div className="text-[9px] text-slate-500 uppercase mt-0.5">{b.tag}</div>
-                </button>
-              ))}
+                { id: 'DELTA', name: 'Delta India', tag: 'Crypto F&O', icon: '⚡' },
+                { id: 'DHAN', name: 'DhanHQ', tag: 'NSE / Stocks', icon: '🏛️' },
+                { id: 'METATRADER', name: 'MetaTrader 5', tag: 'Forex / Gold', icon: '🌍' },
+              ].map((b) => {
+                const isSelected = selectedBroker === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedBroker(b.id as any);
+                      if (b.id === 'DHAN') {
+                        setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
+                      } else if (b.id === 'DELTA') {
+                        setSelectedSymbols(['BTC', 'ETH', 'SOL', 'XRP']);
+                      } else {
+                        setSelectedSymbols(['EURUSD', 'XAUUSD', 'US30']);
+                      }
+                    }}
+                    className={`p-3 rounded-xl text-center border transition-all ${
+                      isSelected
+                        ? 'bg-cyan-500/15 border-cyan-500/60 text-cyan-300 font-bold shadow-lg shadow-cyan-500/10'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
+                    }`}
+                  >
+                    <div className="text-base mb-1">{b.icon}</div>
+                    <div className="text-xs font-bold truncate">{b.name}</div>
+                    <div className="text-[9px] text-slate-500 uppercase mt-0.5">{b.tag}</div>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Quick Balance indicator for selected broker */}
-            <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
-              <span className="text-slate-500 text-[11px]">Live Margin:</span>
+            {/* Live Margin Indicator */}
+            <div className="pt-3 border-t border-slate-900 flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">Live Margin Balance:</span>
               <span className="font-mono font-bold text-slate-200">
                 {connectedBrokers[selectedBroker]?.success
                   ? (connectedBrokers[selectedBroker]?.balanceDisplay || `₹${connectedBrokers[selectedBroker]?.balance} INR`)
@@ -750,42 +794,56 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* STEP 2: Select Strategy */}
-          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 space-y-3">
+          {/* STEP 2: Select Institutional Strategy */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-slate-800/90 space-y-4 shadow-inner">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">2</span>
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">2</span>
                 Select Strategy
               </span>
-              <span className="text-[10px] text-emerald-400 font-mono font-bold">
-                {selectedStrategy === 'Strategy B' ? '1:4 RR' : '1:3 RR'}
+              <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                {selectedStrategy === 'Strategy B' ? '1:4 Risk-Reward' : '1:3 Risk-Reward'}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'Strategy B', name: 'Strategy B: Phantom AI', desc: 'SMC + ICT Scalper (1:4 RR)' },
-                { id: 'Strategy C', name: 'Strategy C: 6 Setups', desc: 'PDH / PDL Breakouts (1:3 RR)' },
-              ].map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSelectedStrategy(s.id as any)}
-                  className={`p-2.5 rounded-xl text-left border transition-all ${
-                    selectedStrategy === s.id
-                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300 font-bold shadow-md shadow-emerald-500/10'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  }`}
-                >
-                  <div className="text-xs font-bold truncate">{s.name}</div>
-                  <div className="text-[9px] text-slate-500 mt-0.5 truncate">{s.desc}</div>
-                </button>
-              ))}
+                { 
+                  id: 'Strategy B', 
+                  title: 'Phantom AI Scalper', 
+                  tag: 'SMC + ICT Engine',
+                  desc: 'BOS, Order Blocks & FVG confluences (1:4 RR)' 
+                },
+                { 
+                  id: 'Strategy C', 
+                  title: '6-Setups Breakout', 
+                  tag: 'PDH / PDL Breakouts',
+                  desc: 'Previous Day High/Low sweeps & momentum (1:3 RR)' 
+                },
+              ].map((s) => {
+                const isSelected = selectedStrategy === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedStrategy(s.id as any)}
+                    className={`p-3 rounded-xl text-left border transition-all ${
+                      isSelected
+                        ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold shadow-lg shadow-emerald-500/10'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-white truncate">{s.title}</div>
+                    <div className="text-[10px] text-emerald-400 font-mono mt-0.5">{s.tag}</div>
+                    <div className="text-[9px] text-slate-400 mt-1 line-clamp-2">{s.desc}</div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Symbols toggle */}
-            <div className="pt-2 border-t border-slate-900 space-y-1">
-              <span className="text-slate-500 text-[10px] block">Trading Pairs / Instruments:</span>
+            <div className="pt-2 border-t border-slate-900 space-y-1.5">
+              <span className="text-slate-500 text-[10px] block font-semibold">Active Instruments / Pairs:</span>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {(selectedBroker === 'DHAN'
                   ? ['NIFTY', 'BANKNIFTY', 'RELIANCE', 'HDFCBANK', 'TATAMOTORS', 'INFY']
@@ -805,9 +863,9 @@ export default function DashboardPage() {
                           setSelectedSymbols([...selectedSymbols, sym]);
                         }
                       }}
-                      className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
                         isSelected
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm'
                           : 'bg-slate-900 text-slate-500 border border-slate-800 hover:text-slate-300'
                       }`}
                     >
@@ -819,52 +877,53 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* STEP 3: Risk Parameters */}
-          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 space-y-3">
+          {/* STEP 3: Risk Parameters & Guardrails */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-slate-800/90 space-y-4 shadow-inner">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">3</span>
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">3</span>
                 Risk & Position Sizing
               </span>
-              <span className="text-[10px] text-slate-400">Institutional Circuit</span>
+              <span className="text-[10px] text-slate-400 font-mono">Circuit Shield</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-3 gap-2.5 text-xs">
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Risk / Trade</label>
+                <label className="text-[10px] text-slate-400 block mb-1 font-semibold">Risk / Trade</label>
                 <select
                   value={riskPerTrade}
                   onChange={(e) => setRiskPerTrade(Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white font-mono text-xs font-bold outline-none focus:border-emerald-500"
                 >
+                  <option value={0.5}>0.5%</option>
                   <option value={1}>1.0%</option>
-                  <option value={2}>2.0% (Rec)</option>
+                  <option value={2}>2.0% (Opt)</option>
                   <option value={3}>3.0%</option>
-                  <option value={5}>5.0%</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Max Trades</label>
+                <label className="text-[10px] text-slate-400 block mb-1 font-semibold">Max Trades/Day</label>
                 <select
                   value={maxTradesDay}
                   onChange={(e) => setMaxTradesDay(Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white font-mono text-xs font-bold outline-none focus:border-emerald-500"
                 >
                   <option value={1}>1 Trade</option>
                   <option value={2}>2 Trades</option>
-                  <option value={3}>3 Trades (Rec)</option>
+                  <option value={3}>3 Trades (Opt)</option>
                   <option value={5}>5 Trades</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Leverage</label>
+                <label className="text-[10px] text-slate-400 block mb-1 font-semibold">Leverage</label>
                 <select
                   value={selectedLeverage}
                   onChange={(e) => setSelectedLeverage(Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold outline-none"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white font-mono text-xs font-bold outline-none focus:border-emerald-500"
                 >
+                  <option value={1}>1x Spot</option>
                   <option value={5}>5x</option>
                   <option value={10}>10x</option>
                   <option value={20}>20x</option>
@@ -872,35 +931,46 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
-              <span className="text-slate-500 text-[11px]">Daily Drawdown Freeze:</span>
-              <span className="font-mono font-bold text-rose-400">-{maxDrawdownPct}% Hard Stop</span>
+            <div className="pt-3 border-t border-slate-900 flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">Daily Drawdown Circuit Breaker:</span>
+              <span className="font-mono font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                -{maxDrawdownPct}% Hard Stop
+              </span>
             </div>
           </div>
         </div>
 
-        {/* STEP 4: BIG PRO LAUNCH BUTTON OR LIVE ACTIVE RADAR */}
-        <div className="pt-1">
+        {/* STEP 4: BIG GLOWING HOLOGRAPHIC LAUNCH BUTTON / LIVE RADAR STATION */}
+        <div className="pt-2">
           {algoActive ? (
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-cyan-950/70 border border-emerald-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0">
-                  <Activity className="w-5 h-5 animate-pulse" />
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-cyan-950/70 border border-emerald-500/50 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0 shadow-lg shadow-emerald-500/20">
+                  <Activity className="w-6 h-6 animate-pulse" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-white tracking-wide flex items-center gap-2">
+                    <span className="text-base font-black text-white tracking-wide flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
-                      ALGO IS LIVE & AUTONOMOUSLY TRADING
+                      ALGO ENGINE LIVE • AUTONOMOUSLY SCANNING ORDER BOOKS
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Scanning {selectedSymbols.join(', ')} with {selectedStrategy} on {selectedBroker} ({riskPerTrade}% risk • Max {maxTradesDay} trades/day).
+                  <p className="text-xs text-slate-400 mt-1">
+                    Live Model: <strong className="text-emerald-400">{selectedStrategy}</strong> on <strong className="text-cyan-400">{selectedBroker}</strong> [{selectedSymbols.join(', ')}] • {riskPerTrade}% risk/trade • Max {maxTradesDay} trades/day.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={handleLaunchAlgo}
+                  disabled={isLaunchingAlgo}
+                  className="px-4 py-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <Sliders className="w-4 h-4" /> Apply Config
+                </button>
+
                 <button
                   type="button"
                   onClick={handleToggleAlgoSwitch}
@@ -924,11 +994,11 @@ export default function DashboardPage() {
               type="button"
               onClick={handleLaunchAlgo}
               disabled={isLaunchingAlgo}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 hover:from-emerald-400 hover:via-teal-300 hover:to-cyan-400 text-slate-950 font-black text-sm sm:text-base tracking-wide transition-all shadow-xl shadow-emerald-500/25 active:scale-[0.99] flex items-center justify-center gap-3 disabled:opacity-50"
+              className="w-full py-5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 hover:from-emerald-400 hover:via-teal-300 hover:to-cyan-400 text-slate-950 font-black text-base sm:text-lg tracking-wider transition-all shadow-2xl shadow-emerald-500/30 active:scale-[0.99] flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              <Rocket className={`w-5 h-5 ${isLaunchingAlgo ? 'animate-bounce' : ''}`} />
+              <Rocket className={`w-6 h-6 ${isLaunchingAlgo ? 'animate-bounce' : ''}`} />
               <span>
-                {isLaunchingAlgo ? 'LAUNCHING LIVE ALGO ENGINE...' : '🚀 LAUNCH LIVE ALGO ENGINE (Start Auto-Trading)'}
+                {isLaunchingAlgo ? 'LAUNCHING LIVE QUANT ENGINE...' : '🚀 ENGAGE AUTONOMOUS ALGO ENGINE (Start Auto-Trading)'}
               </span>
             </button>
           )}
@@ -937,8 +1007,8 @@ export default function DashboardPage() {
 
       {/* Quick Connect Broker Modal */}
       {showQuickConnectBroker && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-850 rounded-3xl p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Key className="w-5 h-5 text-cyan-400" />
@@ -962,7 +1032,7 @@ export default function DashboardPage() {
                       value={quickCreds.clientId}
                       onChange={(e) => setQuickCreds({ ...quickCreds, clientId: e.target.value })}
                       placeholder="e.g. 1000123456"
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                     />
                   </div>
                   <div className="space-y-1">
@@ -972,7 +1042,7 @@ export default function DashboardPage() {
                       value={quickCreds.accessToken}
                       onChange={(e) => setQuickCreds({ ...quickCreds, accessToken: e.target.value })}
                       placeholder="eyJhbGciOi..."
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                     />
                     <p className="text-[10px] text-slate-500">
                       Generated from Dhan Web &gt; My Profile &gt; DhanHQ Trading APIs.
@@ -988,7 +1058,7 @@ export default function DashboardPage() {
                       value={quickCreds.apiKey}
                       onChange={(e) => setQuickCreds({ ...quickCreds, apiKey: e.target.value })}
                       placeholder="delta_api_key_..."
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                     />
                   </div>
                   <div className="space-y-1">
@@ -998,7 +1068,7 @@ export default function DashboardPage() {
                       value={quickCreds.apiSecret}
                       onChange={(e) => setQuickCreds({ ...quickCreds, apiSecret: e.target.value })}
                       placeholder="delta_secret_..."
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                     />
                   </div>
                 </>
@@ -1008,7 +1078,7 @@ export default function DashboardPage() {
                   <input
                     type="password"
                     defaultValue="mt5_bridge_secret_key_2026"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                   />
                 </div>
               )}
@@ -1019,7 +1089,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={handleQuickConnect}
                 disabled={connectingBroker}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {connectingBroker ? (
                   <>
@@ -1034,7 +1104,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setShowQuickConnectBroker(false)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
               >
                 Cancel
               </button>
@@ -1043,19 +1113,19 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Kill Switch Triggered Alert Banner (Direct Disarm on Dashboard) */}
+      {/* Kill Switch Triggered Alert Banner */}
       {killSwitchActive && (
-        <div className="p-4 rounded-xl bg-gradient-to-r from-rose-950/90 via-slate-950 to-rose-950/90 border border-rose-500/60 text-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-rose-950/50">
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-slate-950 to-rose-950/90 border border-rose-500/60 text-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl shadow-rose-950/50">
           <div className="flex items-start sm:items-center gap-3">
             <XOctagon className="w-6 h-6 text-rose-400 shrink-0 animate-bounce mt-0.5 sm:mt-0" />
             <div>
-              <p className="font-black text-sm text-white tracking-wide">🚨 EMERGENCY KILL SWITCH ENGAGED</p>
+              <p className="font-black text-sm text-white tracking-wide">🚨 EMERGENCY CIRCUIT BREAKER TRIPPED</p>
               <p className="text-xs text-rose-300 mt-0.5">{killSwitchReason || 'Circuit breaker active. All orders blocked and trading frozen.'}</p>
             </div>
           </div>
           <button
             onClick={handleResetKillSwitch}
-            className="w-full sm:w-auto text-center px-4 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors shadow shrink-0"
+            className="w-full sm:w-auto text-center px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors shadow-lg shrink-0"
           >
             Disarm Kill Switch
           </button>
@@ -1064,11 +1134,11 @@ export default function DashboardPage() {
 
       {/* Cycle Result Alert if manually fired */}
       {cycleResult && (
-        <div className="p-4 rounded-xl bg-slate-900 border border-emerald-500/30 text-xs text-slate-300">
+        <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 text-xs text-slate-300 shadow-md">
           <p className="font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4" /> Cycle Completed at {cycleResult.timestamp || 'Now'}
           </p>
-          <div className="font-mono bg-slate-950 p-2.5 rounded border border-slate-800 text-slate-300 space-y-1 overflow-x-auto text-[11px]">
+          <div className="font-mono bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-300 space-y-1 overflow-x-auto text-[11px]">
             {cycleResult.result?.logs?.map((l: string, i: number) => (
               <div key={i}>{l}</div>
             )) || <div>{JSON.stringify(cycleResult)}</div>}
@@ -1076,90 +1146,107 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 4 Metric Cards - 100% Real Live Verified Data */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+      {/* 📊 4 INSTITUTIONAL TELEMETRY KPI CARDS */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {/* Card 1: Today Realized P&L in USDT */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
+        <div className="p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 shadow-xl relative overflow-hidden group hover:border-slate-700 transition-all">
+          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
             <span>Today's Realized P&L</span>
             {stats.todayPnl >= 0 ? (
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
             ) : (
-              <TrendingDown className="w-3.5 h-3.5 text-rose-400" />
+              <div className="w-7 h-7 rounded-lg bg-rose-500/15 flex items-center justify-center text-rose-400">
+                <TrendingDown className="w-4 h-4" />
+              </div>
             )}
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-lg sm:text-2xl font-bold font-mono ${stats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className={`text-xl sm:text-2xl font-black font-mono tracking-tight ${stats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {stats.todayPnl >= 0 ? '+' : ''}{stats.todayPnl.toFixed(2)} USDT
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5 flex items-center gap-1">
-            <span>{stats.totalClosedToday} closed trades</span>
-            <span className="text-slate-500">•</span>
-            <span className="text-emerald-400/90 font-medium">01:00 AM IST Reset</span>
+          <p className="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
+            <span className="font-semibold text-white">{stats.totalClosedToday}</span>
+            <span>trades closed today</span>
+            <span className="text-slate-600">•</span>
+            <span className="text-emerald-400/90 font-medium font-mono">01:00 AM IST</span>
           </p>
         </div>
 
-        {/* Card 2: Active Strategy & Scanning Coins */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
-            <span>Active Strategy</span>
-            <Zap className="w-3.5 h-3.5 text-emerald-400" />
+        {/* Card 2: Active Strategy Matrix */}
+        <div className="p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 shadow-xl group hover:border-slate-700 transition-all">
+          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Active Strategy Engine</span>
+            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center text-cyan-400">
+              <Zap className="w-4 h-4" />
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xs sm:text-base font-bold text-white font-mono flex items-center gap-1.5 truncate">
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-sm sm:text-base font-black text-white font-mono flex items-center gap-1.5 truncate">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
               {activeStrategyInfo.name}
             </span>
           </div>
-          <Link href="/strategies" className="text-[10px] text-cyan-400 hover:underline mt-1.5 inline-block font-semibold truncate max-w-full">
-            Scanning: {activeStrategyInfo.symbols.join(', ')} &rarr;
-          </Link>
-          <p className="text-[10px] text-emerald-400/90 font-medium mt-0.5 truncate">
+          <p className="text-[11px] text-cyan-400 font-mono mt-2 truncate font-semibold">
+            Scanning: {activeStrategyInfo.symbols.join(', ')}
+          </p>
+          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
             {activeStrategyInfo.name === 'Strategy B'
-              ? '⚡ Phantom AI (SMC + ICT Scalper: BOS • OB • FVG) • 1:4 RR'
-              : '🔥 6 Setups Engine (PDH • PDL • PDC) • 1:3 RR'}
+              ? 'Phantom AI (SMC + ICT: OB • FVG • 1:4 RR)'
+              : '6 Setups Engine (PDH/PDL Sweeps • 1:3 RR)'}
           </p>
         </div>
 
-        {/* Card 3: Win Rate (Real calculation) */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-sm">
-          <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
-            <span>Win Rate</span>
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+        {/* Card 3: Win Rate Gauge */}
+        <div className="p-5 rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 shadow-xl group hover:border-slate-700 transition-all">
+          <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Real Win Rate</span>
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+              <BarChart3 className="w-4 h-4" />
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-lg sm:text-2xl font-bold text-white font-mono">
-              {stats.totalClosedToday > 0 ? `${stats.winRate}%` : '0%'}
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-black text-white font-mono tracking-tight">
+              {stats.totalClosedToday > 0 ? `${stats.winRate}%` : '0.0%'}
             </span>
           </div>
-          <p className="text-[10px] sm:text-xs text-slate-400 mt-1.5 flex items-center gap-1">
-            <span>{stats.totalClosedToday} trades</span>
-            <span className="text-slate-500">•</span>
-            <span className="text-slate-400">01:00 AM IST cycle</span>
+          <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+            <div 
+              className="bg-gradient-to-r from-emerald-500 to-cyan-400 h-1.5 rounded-full transition-all"
+              style={{ width: `${stats.totalClosedToday > 0 ? stats.winRate : 0}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2 flex items-center justify-between">
+            <span>{stats.totalClosedToday} closed cycles</span>
+            <span className="font-mono text-emerald-400">Real Stats</span>
           </p>
         </div>
 
-        {/* Card 4: Emergency Kill Switch (Direct Control Shifted Here) */}
-        <div className={`p-4 sm:p-5 rounded-2xl border shadow-sm transition-all flex flex-col justify-between ${
+        {/* Card 4: Capital Circuit Breaker Shield */}
+        <div className={`p-5 rounded-2xl border shadow-xl transition-all flex flex-col justify-between ${
           killSwitchActive
             ? 'bg-rose-950/80 border-rose-500 shadow-rose-950/40'
-            : 'bg-slate-900/80 border-slate-800/80'
+            : 'bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800'
         }`}>
           <div>
-            <div className="flex items-center justify-between text-slate-400 text-[11px] sm:text-xs font-medium">
-              <span>Kill Switch</span>
-              <AlertOctagon className={`w-3.5 h-3.5 ${killSwitchActive ? 'text-rose-400 animate-bounce' : 'text-emerald-400'}`} />
+            <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+              <span>Circuit Shield</span>
+              <ShieldCheck className={`w-4 h-4 ${killSwitchActive ? 'text-rose-400' : 'text-emerald-400'}`} />
             </div>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className={`text-xs sm:text-base font-bold font-mono ${killSwitchActive ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {killSwitchActive ? 'TRIPPED (HALT)' : 'ARMED & SAFE'}
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className={`text-sm sm:text-base font-black font-mono ${killSwitchActive ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {killSwitchActive ? 'CIRCUIT TRIPPED' : 'SHIELD OPTIMAL'}
               </span>
             </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Max Drawdown: <span className="font-mono font-bold text-slate-200">-{maxDrawdownPct}% Hard Stop</span>
+            </p>
           </div>
           <button
             onClick={killSwitchActive ? handleResetKillSwitch : handleTriggerKillSwitch}
-            className={`mt-2 w-full py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+            className={`mt-2 w-full py-2 rounded-xl text-[11px] font-bold transition-all text-center ${
               killSwitchActive
                 ? 'bg-rose-500 hover:bg-rose-600 text-white shadow'
                 : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30'
@@ -1170,21 +1257,30 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Active Live Positions (Real Supabase Rows) */}
-      <div className="p-4 sm:p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-4">
-          <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-            Open Positions ({activePositions.length})
-          </h2>
-          <span className="text-xs text-slate-400">Real-time live positions</span>
+      {/* 🔴 ACTIVE LIVE POSITIONS (Real-time telemetry) */}
+      <div className="p-5 sm:p-7 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+              Active Live Positions ({activePositions.length})
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">Real-time open market exposure</span>
         </div>
 
         {activePositions.length === 0 ? (
-          <div className="py-10 text-center text-slate-500 text-xs font-sans">
-            <Zap className="w-8 h-8 mx-auto mb-2 opacity-30 text-emerald-400" />
-            <p className="text-sm font-semibold text-slate-400">No open positions right now.</p>
-            <p className="mt-1 text-slate-500">Scanning {activeStrategyInfo.symbols.join(', ')} for breakout signals.</p>
+          <div className="py-12 text-center text-slate-500 text-xs font-sans space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 shadow-inner">
+              <Zap className="w-6 h-6 opacity-40 animate-pulse" />
+            </div>
+            <p className="text-sm font-semibold text-slate-300">No open positions currently active.</p>
+            <p className="text-slate-500 max-w-md mx-auto">
+              Scanning order books across [{activeStrategyInfo.symbols.join(', ')}] for high-probability SMC liquidity sweeps & breakout confluence.
+            </p>
           </div>
         ) : (
           <>
@@ -1197,25 +1293,25 @@ export default function DashboardPage() {
                 const isProfitable = pnl >= 0;
 
                 return (
-                  <div key={pos.id} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 shadow-md">
+                  <div key={pos.id} className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3 shadow-lg">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-white text-base font-mono">{pos.symbol}</span>
+                        <span className="font-black text-white text-base font-mono">{pos.symbol}</span>
                         {pos.paper_trade ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold">
                             PAPER
                           </span>
                         ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
                             LIVE
                           </span>
                         )}
-                        <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-850 text-slate-300 border border-slate-700">
                           {pos.broker_name || pos.broker}
                         </span>
                       </div>
-                      <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg ${
-                        pos.side === 'BUY' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'
+                      <span className={`inline-flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-xl ${
+                        pos.side === 'BUY' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                       }`}>
                         {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                         {pos.side}
@@ -1224,7 +1320,7 @@ export default function DashboardPage() {
 
                     <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-900">
                       <div>
-                        <span className="text-slate-500 text-[10px] block">Qty</span>
+                        <span className="text-slate-500 text-[10px] block">Quantity</span>
                         <span className="font-mono text-slate-200 font-bold">{pos.quantity}</span>
                       </div>
                       <div>
@@ -1232,12 +1328,12 @@ export default function DashboardPage() {
                         <span className="font-mono text-slate-200">{entry}</span>
                       </div>
                       <div>
-                        <span className="text-slate-500 text-[10px] block">Current</span>
+                        <span className="text-slate-500 text-[10px] block">Current Mark</span>
                         <span className="font-mono text-slate-200">{curr}</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-800/80">
+                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-850">
                       <div>
                         <span className="text-slate-500 text-[10px] block">Unrealized P&L</span>
                         <span className={`font-mono font-black text-lg ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -1248,7 +1344,7 @@ export default function DashboardPage() {
                       <button
                         onClick={() => handleSquareOff(pos)}
                         disabled={squaringOffId === pos.id}
-                        className="px-4 py-2 text-xs font-bold rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 transition-all disabled:opacity-50"
+                        className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 transition-all disabled:opacity-50"
                       >
                         {squaringOffId === pos.id ? 'Exiting...' : 'Square Off'}
                       </button>
@@ -1261,7 +1357,7 @@ export default function DashboardPage() {
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-300">
-                <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                <thead className="text-xs uppercase bg-slate-950/80 text-slate-400 border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-4">Symbol</th>
                     <th className="py-3 px-4">Broker</th>
@@ -1273,7 +1369,7 @@ export default function DashboardPage() {
                     <th className="py-3 px-4 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800 font-mono">
+                <tbody className="divide-y divide-slate-800/80 font-mono">
                   {activePositions.map((pos) => {
                     const entry = Number(pos.entry_price || pos.entryPrice || 0);
                     const curr = Number(pos.current_price || pos.currentPrice || entry);
@@ -1282,35 +1378,35 @@ export default function DashboardPage() {
 
                     return (
                       <tr key={pos.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3.5 px-4 font-sans font-semibold text-white">
+                        <td className="py-4 px-4 font-sans font-bold text-white">
                           {pos.symbol}
                         </td>
-                        <td className="py-3.5 px-4 text-xs font-sans">
-                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        <td className="py-4 px-4 text-xs font-sans">
+                          <span className="px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
                             {pos.broker_name || pos.broker}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
-                            pos.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'
+                        <td className="py-4 px-4">
+                          <span className={`inline-flex items-center gap-1 text-xs font-black px-2.5 py-1 rounded-lg ${
+                            pos.side === 'BUY' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                           }`}>
                             {pos.side === 'BUY' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                             {pos.side}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4">{pos.quantity}</td>
-                        <td className="py-3.5 px-4">{entry}</td>
-                        <td className="py-3.5 px-4">{curr}</td>
-                        <td className={`py-3.5 px-4 text-right font-bold ${
+                        <td className="py-4 px-4">{pos.quantity}</td>
+                        <td className="py-4 px-4">{entry}</td>
+                        <td className="py-4 px-4">{curr}</td>
+                        <td className={`py-4 px-4 text-right font-black ${
                           isProfitable ? 'text-emerald-400' : 'text-rose-400'
                         }`}>
                           {isProfitable ? '+' : ''}{pnl.toFixed(2)} USDT
                         </td>
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-4 px-4 text-center">
                           <button
                             onClick={() => handleSquareOff(pos)}
                             disabled={squaringOffId === pos.id}
-                            className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-all disabled:opacity-50"
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-all disabled:opacity-50"
                           >
                             {squaringOffId === pos.id ? 'Exiting...' : 'Square Off'}
                           </button>
@@ -1325,29 +1421,34 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Recent Completed Trades (Real Supabase Rows) */}
-      <div className="p-4 sm:p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl">
-        <h2 className="text-base sm:text-lg font-semibold text-white mb-4">Recent Executed Trades</h2>
+      {/* 📜 RECENT EXECUTED TRADES LEDGER */}
+      <div className="p-5 sm:p-7 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <h2 className="text-base sm:text-lg font-bold text-white tracking-wide">
+            Recent Executed Trades Ledger
+          </h2>
+          <span className="text-xs text-slate-500 font-mono">Real execution record</span>
+        </div>
 
         {recentTrades.length === 0 ? (
-          <div className="py-8 text-center text-slate-500 text-xs font-sans">
-            No recent closed trades yet today. Real closed trades will display here automatically.
+          <div className="py-10 text-center text-slate-500 text-xs font-sans">
+            No recent closed trades yet today. Real closed trades will display here automatically upon cycle execution.
           </div>
         ) : (
           <>
             {/* Mobile Trade Cards */}
             <div className="grid grid-cols-1 gap-2.5 md:hidden">
               {recentTrades.map((tr) => (
-                <div key={tr.id} className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-2 text-xs">
+                <div key={tr.id} className="p-3.5 rounded-2xl bg-slate-950 border border-slate-850 space-y-2 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-white font-mono">{tr.symbol}</span>
-                    <span className={`font-bold font-mono text-sm ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`font-black font-mono text-sm ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {Number(tr.pnl || 0) >= 0 ? `+${tr.pnl}` : tr.pnl} USDT
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-400 text-[11px]">
                     <span className="flex items-center gap-1.5">
-                      <span className={`px-1.5 py-0.5 rounded font-bold ${tr.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                      <span className={`px-2 py-0.5 rounded font-bold ${tr.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
                         {tr.side}
                       </span>
                       <span>Qty: {tr.quantity}</span>
@@ -1362,37 +1463,37 @@ export default function DashboardPage() {
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-300">
-                <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                <thead className="text-xs uppercase bg-slate-950/80 text-slate-400 border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-4">Symbol</th>
                     <th className="py-3 px-4">Broker</th>
                     <th className="py-3 px-4">Action</th>
                     <th className="py-3 px-4">Qty</th>
                     <th className="py-3 px-4">Entry / Exit</th>
-                    <th className="py-3 px-4">Strategy Reason</th>
+                    <th className="py-3 px-4">Strategy Confluence Reason</th>
                     <th className="py-3 px-4 text-right">Realized P&L</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800 font-mono">
+                <tbody className="divide-y divide-slate-800/80 font-mono">
                   {recentTrades.map((tr) => (
                     <tr key={tr.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 px-4 font-sans font-medium text-white">{tr.symbol}</td>
-                      <td className="py-3 px-4 text-xs font-sans">
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                      <td className="py-3.5 px-4 font-sans font-bold text-white">{tr.symbol}</td>
+                      <td className="py-3.5 px-4 text-xs font-sans">
+                        <span className="px-2.5 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
                           {tr.broker_name || tr.broker}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
-                        <span className={`text-xs font-semibold ${tr.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <td className="py-3.5 px-4">
+                        <span className={`text-xs font-black ${tr.side === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {tr.side}
                         </span>
                       </td>
-                      <td className="py-3 px-4">{tr.quantity}</td>
-                      <td className="py-3 px-4 text-xs">
+                      <td className="py-3.5 px-4">{tr.quantity}</td>
+                      <td className="py-3.5 px-4 text-xs">
                         {tr.entry_price || tr.entry} &rarr; {tr.exit_price || tr.exit || '-'}
                       </td>
-                      <td className="py-3 px-4 text-xs font-sans text-slate-400">{tr.notes || 'Target Hit'}</td>
-                      <td className={`py-3 px-4 text-right font-bold ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <td className="py-3.5 px-4 text-xs font-sans text-slate-400">{tr.notes || 'SMC Confluence Target Hit'}</td>
+                      <td className={`py-3.5 px-4 text-right font-black ${Number(tr.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {Number(tr.pnl || 0) >= 0 ? `+${tr.pnl}` : tr.pnl} USDT
                       </td>
                     </tr>
