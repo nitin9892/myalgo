@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { getAdminSupabase } from '../supabase';
 import { getBrokerAdapter } from '../brokers';
 import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrategyParams } from './prev_day_breakout';
@@ -169,7 +171,16 @@ export async function runTradingEngineCycle() {
     // ------------------------------------------------------------------------
     // 2. FETCH 5M CANDLE FEED & CONNECT ADAPTER
     // ------------------------------------------------------------------------
-    const adapter = getBrokerAdapter(masterStrategy.broker_name);
+    let brokerCreds: any = undefined;
+    try {
+      const credsFile = path.join(process.cwd(), 'data', 'broker_creds.json');
+      if (fs.existsSync(credsFile)) {
+        const parsed = JSON.parse(fs.readFileSync(credsFile, 'utf-8'));
+        brokerCreds = parsed[masterStrategy.broker_name];
+      }
+    } catch {}
+
+    const adapter = getBrokerAdapter(masterStrategy.broker_name, brokerCreds);
     
     // Support multiple instruments scanner (BTC, ETH, SOL, XRP)
     const targetSymbols: string[] = (masterStrategy.params?.symbols && Array.isArray(masterStrategy.params.symbols) && masterStrategy.params.symbols.length > 0)

@@ -22,7 +22,11 @@ import {
   Send,
   X,
   Check,
-  Power
+  Power,
+  Rocket,
+  Activity,
+  Key,
+  Coins
 } from 'lucide-react';
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
@@ -81,6 +85,27 @@ export default function DashboardPage() {
   // Master Algo ON / OFF Switch State
   const [algoActive, setAlgoActive] = useState<boolean>(true);
   const [isTogglingAlgo, setIsTogglingAlgo] = useState(false);
+
+  // 4-Step Launch & Workflow Wizard State
+  const [selectedBroker, setSelectedBroker] = useState<'DELTA' | 'DHAN' | 'METATRADER'>('DELTA');
+  const [selectedStrategy, setSelectedStrategy] = useState<'Strategy B' | 'Strategy C' | 'Strategy A'>('Strategy B');
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>(['BTC', 'ETH', 'SOL', 'XRP']);
+  const [allocatedCapital, setAllocatedCapital] = useState<number>(100000);
+  const [riskPerTrade, setRiskPerTrade] = useState<number>(2);
+  const [selectedLeverage, setSelectedLeverage] = useState<number>(10);
+  const [maxTradesDay, setMaxTradesDay] = useState<number>(3);
+  const [maxDrawdownPct, setMaxDrawdownPct] = useState<number>(5);
+  const [isLaunchingAlgo, setIsLaunchingAlgo] = useState(false);
+  const [showQuickConnectBroker, setShowQuickConnectBroker] = useState(false);
+
+  // Quick credentials input for modal
+  const [quickCreds, setQuickCreds] = useState<Record<string, string>>({
+    clientId: '',
+    accessToken: '',
+    apiKey: '',
+    apiSecret: '',
+  });
+  const [connectingBroker, setConnectingBroker] = useState(false);
 
   // Live real-time balance auto-sync from broker API
   const syncLiveBrokerBalance = async () => {
@@ -384,6 +409,118 @@ export default function DashboardPage() {
   const activeBrokerId = connectedEntry ? connectedEntry[0] : null;
   const activeBrokerData = connectedEntry ? connectedEntry[1] : null;
 
+  const handleLaunchAlgo = async () => {
+    const savedStatus = localStorage.getItem('myalgo_broker_status');
+    const statusObj = savedStatus ? JSON.parse(savedStatus) : {};
+    const isConnected = !!statusObj[selectedBroker]?.success;
+
+    if (!isConnected) {
+      const confirmOpen = await showConfirm({
+        title: `${selectedBroker} Broker Not Connected`,
+        message: `${selectedBroker} credentials need to be verified before running live trades. Would you like to enter credentials and connect now?`,
+        type: 'warning',
+        confirmText: 'Connect Now',
+      });
+      if (confirmOpen) {
+        setShowQuickConnectBroker(true);
+      }
+      return;
+    }
+
+    setIsLaunchingAlgo(true);
+    try {
+      await fetch('/api/risk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maxDailyLossPct: maxDrawdownPct,
+          perTradeRiskPct: riskPerTrade,
+          maxOpenTrades: maxTradesDay,
+          leverage: selectedLeverage,
+          autoSyncWallet: true,
+        }),
+      });
+
+      await fetch('/api/strategies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: selectedStrategy,
+          broker_name: selectedBroker,
+          symbols: selectedSymbols.map((s) => (selectedBroker === 'DELTA' ? `${s}USD` : s)),
+          risk_reward_ratio: selectedStrategy === 'Strategy B' ? 4 : 3,
+          max_trades_per_day: maxTradesDay,
+          is_active: true,
+        }),
+      });
+
+      setAlgoActive(true);
+      await triggerCycleNow();
+
+      await showAlert({
+        title: 'Algo Successfully Launched! 🚀',
+        message: `Algo engine is now LIVE and actively scanning ${selectedSymbols.join(', ')} with ${selectedStrategy} on ${selectedBroker}.\nRisk: ${riskPerTrade}% per trade • Leverage: ${selectedLeverage}x • Max Trades: ${maxTradesDay}/day.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      await showAlert({ title: 'Launch Failed', message: err.message, type: 'danger' });
+    } finally {
+      setIsLaunchingAlgo(false);
+    }
+  };
+
+  const handleQuickConnect = async () => {
+    setConnectingBroker(true);
+    try {
+      const credsToSend = selectedBroker === 'DHAN'
+        ? { clientId: quickCreds.clientId, accessToken: quickCreds.accessToken }
+        : { apiKey: quickCreds.apiKey, apiSecret: quickCreds.apiSecret, region: 'INDIA' };
+
+      const res = await fetch('/api/brokers/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broker: selectedBroker, credentials: credsToSend }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const savedCreds = localStorage.getItem('myalgo_broker_creds');
+        const credsObj = savedCreds ? JSON.parse(savedCreds) : {};
+        credsObj[selectedBroker] = credsToSend;
+        localStorage.setItem('myalgo_broker_creds', JSON.stringify(credsObj));
+
+        const savedStatus = localStorage.getItem('myalgo_broker_status');
+        const statusObj = savedStatus ? JSON.parse(savedStatus) : {};
+        statusObj[selectedBroker] = {
+          success: true,
+          balance: data.balance,
+          currency: data.currency,
+          balanceDisplay: data.balanceDisplay,
+          accountStatus: 'CONNECTED',
+          lastSynced: data.syncedAt,
+        };
+        localStorage.setItem('myalgo_broker_status', JSON.stringify(statusObj));
+        setConnectedBrokers(statusObj);
+        setShowQuickConnectBroker(false);
+
+        await showAlert({
+          title: `${selectedBroker} Connected!`,
+          message: data.message || `Successfully connected to ${selectedBroker}! Available margin: ${data.balanceDisplay || data.balance}`,
+          type: 'success',
+        });
+      } else {
+        await showAlert({
+          title: 'Connection Failed',
+          message: data.message || 'Could not authenticate with broker. Check credentials.',
+          type: 'danger',
+        });
+      }
+    } catch (err: any) {
+      await showAlert({ title: 'Error', message: err.message, type: 'danger' });
+    } finally {
+      setConnectingBroker(false);
+    }
+  };
+
   return (
     <div className="space-y-5 sm:space-y-6">
       {/* Top Banner / Header */}
@@ -497,23 +634,412 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Master Algo PAUSED Alert Banner */}
-      {!algoActive && (
-        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-amber-950/80 border border-amber-500/50 text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xl">
-          <div className="flex items-start sm:items-center gap-3">
-            <Power className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
-            <div>
-              <p className="font-black text-sm text-amber-200 tracking-wide">⚪ MASTER ALGO IS PAUSED</p>
-              <p className="text-xs text-amber-300/80 mt-0.5">Automated signal evaluation and order execution are currently halted. Click &quot;Turn Algo ON&quot; to resume trading.</p>
+      {/* 🚀 4-STEP ALGO LAUNCH & CONTROL STATION (SaaS / Client Rental Workflow) */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl relative overflow-hidden space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800/80">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 flex items-center justify-center text-slate-950 font-black shadow-md shadow-emerald-500/20">
+                <Rocket className="w-4 h-4" />
+              </div>
+              <h2 className="text-lg font-bold text-white tracking-wide">
+                Algo Setup & Launch Station
+              </h2>
+              {algoActive ? (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black flex items-center gap-1.5 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  LIVE RUNNING
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                  READY TO LAUNCH
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Select Broker &rarr; Choose Strategy &rarr; Set Risk Rules &rarr; Hit Launch to start live autonomous algorithmic execution.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {algoActive && (
+              <button
+                type="button"
+                onClick={triggerCycleNow}
+                disabled={isRunningCycle}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRunningCycle ? 'animate-spin text-emerald-400' : ''}`} />
+                <span>{isRunningCycle ? 'Scanning...' : 'Scan Market Now'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 3 Step Setup Columns */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* STEP 1: Select Broker */}
+          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-cyan-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">1</span>
+                Select Broker
+              </span>
+              {connectedBrokers[selectedBroker]?.success ? (
+                <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Live Connected
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowQuickConnectBroker(true)}
+                  className="text-[10px] text-cyan-400 hover:underline font-bold"
+                >
+                  + Connect Keys
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { id: 'DELTA', name: 'Delta India', tag: 'Crypto' },
+                { id: 'DHAN', name: 'DhanHQ', tag: 'NSE / F&O' },
+                { id: 'METATRADER', name: 'MetaTrader', tag: 'Forex' },
+              ].map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedBroker(b.id as any);
+                    if (b.id === 'DHAN') {
+                      setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
+                    } else if (b.id === 'DELTA') {
+                      setSelectedSymbols(['BTC', 'ETH', 'SOL', 'XRP']);
+                    } else {
+                      setSelectedSymbols(['EURUSD', 'XAUUSD', 'US30']);
+                    }
+                  }}
+                  className={`p-2.5 rounded-xl text-center border transition-all ${
+                    selectedBroker === b.id
+                      ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 font-bold shadow-md shadow-cyan-500/10'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <div className="text-xs font-bold truncate">{b.name}</div>
+                  <div className="text-[9px] text-slate-500 uppercase mt-0.5">{b.tag}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Quick Balance indicator for selected broker */}
+            <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">Live Margin:</span>
+              <span className="font-mono font-bold text-slate-200">
+                {connectedBrokers[selectedBroker]?.success
+                  ? (connectedBrokers[selectedBroker]?.balanceDisplay || `₹${connectedBrokers[selectedBroker]?.balance} INR`)
+                  : (
+                    <button
+                      type="button"
+                      onClick={() => setShowQuickConnectBroker(true)}
+                      className="text-amber-400 font-sans text-[11px] hover:underline"
+                    >
+                      Connect {selectedBroker} &rarr;
+                    </button>
+                  )}
+              </span>
             </div>
           </div>
-          <button
-            onClick={handleToggleAlgoSwitch}
-            disabled={isTogglingAlgo}
-            className="w-full sm:w-auto text-center px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs transition-all shadow-md active:scale-95 shrink-0"
-          >
-            Turn Algo ON 🟢
-          </button>
+
+          {/* STEP 2: Select Strategy */}
+          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">2</span>
+                Select Strategy
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                {selectedStrategy === 'Strategy B' ? '1:4 RR' : '1:3 RR'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { id: 'Strategy B', name: 'Strategy B: Phantom AI', desc: 'SMC + ICT Scalper (1:4 RR)' },
+                { id: 'Strategy C', name: 'Strategy C: 6 Setups', desc: 'PDH / PDL Breakouts (1:3 RR)' },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSelectedStrategy(s.id as any)}
+                  className={`p-2.5 rounded-xl text-left border transition-all ${
+                    selectedStrategy === s.id
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300 font-bold shadow-md shadow-emerald-500/10'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <div className="text-xs font-bold truncate">{s.name}</div>
+                  <div className="text-[9px] text-slate-500 mt-0.5 truncate">{s.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Symbols toggle */}
+            <div className="pt-2 border-t border-slate-900 space-y-1">
+              <span className="text-slate-500 text-[10px] block">Trading Pairs / Instruments:</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(selectedBroker === 'DHAN'
+                  ? ['NIFTY', 'BANKNIFTY', 'RELIANCE', 'HDFCBANK', 'TATAMOTORS', 'INFY']
+                  : selectedBroker === 'DELTA'
+                  ? ['BTC', 'ETH', 'SOL', 'XRP']
+                  : ['EURUSD', 'XAUUSD', 'US30']
+                ).map((sym) => {
+                  const isSelected = selectedSymbols.includes(sym);
+                  return (
+                    <button
+                      key={sym}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected && selectedSymbols.length > 1) {
+                          setSelectedSymbols(selectedSymbols.filter((x) => x !== sym));
+                        } else if (!isSelected) {
+                          setSelectedSymbols([...selectedSymbols, sym]);
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                        isSelected
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                          : 'bg-slate-900 text-slate-500 border border-slate-800 hover:text-slate-300'
+                      }`}
+                    >
+                      {sym}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* STEP 3: Risk Parameters */}
+          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] flex items-center justify-center font-bold">3</span>
+                Risk & Position Sizing
+              </span>
+              <span className="text-[10px] text-slate-400">Institutional Circuit</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Risk / Trade</label>
+                <select
+                  value={riskPerTrade}
+                  onChange={(e) => setRiskPerTrade(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold outline-none"
+                >
+                  <option value={1}>1.0%</option>
+                  <option value={2}>2.0% (Rec)</option>
+                  <option value={3}>3.0%</option>
+                  <option value={5}>5.0%</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Max Trades</label>
+                <select
+                  value={maxTradesDay}
+                  onChange={(e) => setMaxTradesDay(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold outline-none"
+                >
+                  <option value={1}>1 Trade</option>
+                  <option value={2}>2 Trades</option>
+                  <option value={3}>3 Trades (Rec)</option>
+                  <option value={5}>5 Trades</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Leverage</label>
+                <select
+                  value={selectedLeverage}
+                  onChange={(e) => setSelectedLeverage(Number(e.target.value))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-white font-mono text-xs font-bold outline-none"
+                >
+                  <option value={5}>5x</option>
+                  <option value={10}>10x</option>
+                  <option value={20}>20x</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-900 flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">Daily Drawdown Freeze:</span>
+              <span className="font-mono font-bold text-rose-400">-{maxDrawdownPct}% Hard Stop</span>
+            </div>
+          </div>
+        </div>
+
+        {/* STEP 4: BIG PRO LAUNCH BUTTON OR LIVE ACTIVE RADAR */}
+        <div className="pt-1">
+          {algoActive ? (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-slate-900 to-cyan-950/70 border border-emerald-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Activity className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-white tracking-wide flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                      ALGO IS LIVE & AUTONOMOUSLY TRADING
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Scanning {selectedSymbols.join(', ')} with {selectedStrategy} on {selectedBroker} ({riskPerTrade}% risk • Max {maxTradesDay} trades/day).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={handleToggleAlgoSwitch}
+                  disabled={isTogglingAlgo}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-amber-500/30 transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <Power className="w-4 h-4" /> Pause Algo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTriggerKillSwitch}
+                  className="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs border border-rose-500/40 transition-all active:scale-95 flex items-center gap-1.5"
+                >
+                  <AlertOctagon className="w-4 h-4" /> Kill Switch
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLaunchAlgo}
+              disabled={isLaunchingAlgo}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 hover:from-emerald-400 hover:via-teal-300 hover:to-cyan-400 text-slate-950 font-black text-sm sm:text-base tracking-wide transition-all shadow-xl shadow-emerald-500/25 active:scale-[0.99] flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              <Rocket className={`w-5 h-5 ${isLaunchingAlgo ? 'animate-bounce' : ''}`} />
+              <span>
+                {isLaunchingAlgo ? 'LAUNCHING LIVE ALGO ENGINE...' : '🚀 LAUNCH LIVE ALGO ENGINE (Start Auto-Trading)'}
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Connect Broker Modal */}
+      {showQuickConnectBroker && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-base font-bold text-white">Connect {selectedBroker} Credentials</h3>
+              </div>
+              <button
+                onClick={() => setShowQuickConnectBroker(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {selectedBroker === 'DHAN' ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-300">Dhan Client ID (10 Digits)</label>
+                    <input
+                      type="text"
+                      value={quickCreds.clientId}
+                      onChange={(e) => setQuickCreds({ ...quickCreds, clientId: e.target.value })}
+                      placeholder="e.g. 1000123456"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-300">24-Hour Access Token (JWT)</label>
+                    <input
+                      type="password"
+                      value={quickCreds.accessToken}
+                      onChange={(e) => setQuickCreds({ ...quickCreds, accessToken: e.target.value })}
+                      placeholder="eyJhbGciOi..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                      Generated from Dhan Web &gt; My Profile &gt; DhanHQ Trading APIs.
+                    </p>
+                  </div>
+                </>
+              ) : selectedBroker === 'DELTA' ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-300">Delta API Key</label>
+                    <input
+                      type="text"
+                      value={quickCreds.apiKey}
+                      onChange={(e) => setQuickCreds({ ...quickCreds, apiKey: e.target.value })}
+                      placeholder="delta_api_key_..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-300">Delta API Secret</label>
+                    <input
+                      type="password"
+                      value={quickCreds.apiSecret}
+                      onChange={(e) => setQuickCreds({ ...quickCreds, apiSecret: e.target.value })}
+                      placeholder="delta_secret_..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-300">MT5 Bridge Secret</label>
+                  <input
+                    type="password"
+                    defaultValue="mt5_bridge_secret_key_2026"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleQuickConnect}
+                disabled={connectingBroker}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {connectingBroker ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Verifying...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" /> Verify & Connect Live
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowQuickConnectBroker(false)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

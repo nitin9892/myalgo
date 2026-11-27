@@ -23,7 +23,12 @@ import {
   Clock,
   Layers,
   RefreshCw,
-  Zap
+  Zap,
+  Coins,
+  DollarSign,
+  Receipt,
+  Download,
+  CheckCircle2
 } from 'lucide-react';
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
@@ -39,8 +44,44 @@ interface TokenItem {
   created_at: string;
 }
 
+interface CommissionRecord {
+  userId: string;
+  tokenCode: string;
+  clientLabel: string;
+  isActive: boolean;
+  commissionRate: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  winRate: number;
+  grossProfit: number;
+  grossLoss: number;
+  netProfit: number;
+  todayPnl: number;
+  commissionDue: number;
+  settledCommission: number;
+  pendingCommission: number;
+  settlementStatus: 'SETTLED' | 'PENDING' | 'NO_PROFIT';
+  lastSettledAt?: string | null;
+  settlementNotes?: string;
+  lastTradeTime?: string | null;
+  virtualWalletBalance?: number;
+  currency: string;
+  createdAt: string;
+}
+
+interface CommissionSummary {
+  totalClients: number;
+  activeClients: number;
+  totalNetProfit: number;
+  totalCommissionDue: number;
+  totalSettledCommission: number;
+  totalPendingCommission: number;
+  defaultRate: number;
+}
+
 export default function AdminPage() {
-  const { showAlert } = useModal();
+  const { showAlert, showConfirm } = useModal();
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [passcode, setPasscode] = useState('');
@@ -53,7 +94,16 @@ export default function AdminPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Active Admin Tab State
-  const [activeTab, setActiveTab] = useState<'TOKENS' | 'BACKTEST'>('TOKENS');
+  const [activeTab, setActiveTab] = useState<'TOKENS' | 'COMMISSIONS' | 'BACKTEST'>('TOKENS');
+
+  // Client Profits & Commission State
+  const [commissionReports, setCommissionReports] = useState<CommissionRecord[]>([]);
+  const [commissionSummary, setCommissionSummary] = useState<CommissionSummary | null>(null);
+  const [loadingCommissions, setLoadingCommissions] = useState(false);
+  const [defaultCommissionRate, setDefaultCommissionRate] = useState<number>(20);
+  const [commissionFilter, setCommissionFilter] = useState<'ALL' | 'PENDING' | 'PROFITABLE'>('ALL');
+  const [savingRateUserId, setSavingRateUserId] = useState<string | null>(null);
+  const [rateInputs, setRateInputs] = useState<Record<string, number>>({});
 
   // Real Market Backtest State (Admin Exclusive)
   const [btStrategy, setBtStrategy] = useState<'Strategy A' | 'Strategy B' | 'Strategy C'>('Strategy C');
@@ -83,6 +133,7 @@ export default function AdminPage() {
       setAdminEmail(savedAdmin);
       document.cookie = `myalgo_admin_session=${encodeURIComponent(savedAdmin)}; Path=/; Max-Age=604800;`;
       fetchTokens(savedAdmin);
+      fetchCommissions(savedAdmin);
     }
   }, []);
 
@@ -103,6 +154,7 @@ export default function AdminPage() {
         document.cookie = `myalgo_admin_session=${encodeURIComponent(adminEmail.trim())}; Path=/; Max-Age=604800;`;
         setIsAdminLoggedIn(true);
         fetchTokens(adminEmail.trim());
+        fetchCommissions(adminEmail.trim());
       } else {
         setLoginError(data.message || 'Login failed');
       }
@@ -221,6 +273,166 @@ export default function AdminPage() {
     navigator.clipboard.writeText(code);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const fetchCommissions = async (overrideEmail?: string) => {
+    setLoadingCommissions(true);
+    const emailToUse = overrideEmail || adminEmail || localStorage.getItem('myalgo_admin_email') || '';
+    try {
+      const res = await fetch('/api/admin/commissions', {
+        headers: { 'x-admin-email': emailToUse },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCommissionReports(data.reports || []);
+        setCommissionSummary(data.summary || null);
+        if (data.summary?.defaultRate) {
+          setDefaultCommissionRate(data.summary.defaultRate);
+        }
+        const initialRates: Record<string, number> = {};
+        (data.reports || []).forEach((r: CommissionRecord) => {
+          initialRates[r.userId] = r.commissionRate;
+        });
+        setRateInputs(initialRates);
+      }
+    } catch (err) {
+      console.error('Failed to load commissions:', err);
+    } finally {
+      setLoadingCommissions(false);
+    }
+  };
+
+  const handleUpdateDefaultRate = async () => {
+    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
+    try {
+      const res = await fetch('/api/admin/commissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-email': emailToUse },
+        body: JSON.stringify({ action: 'UPDATE_DEFAULT_RATE', defaultRate: defaultCommissionRate }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCommissionReports(data.reports || []);
+        setCommissionSummary(data.summary || null);
+        await showAlert({
+          title: 'Commission Rate Updated',
+          message: `Global default commission rate successfully updated to ${defaultCommissionRate}%.`,
+          type: 'success',
+        });
+      }
+    } catch (err: any) {
+      await showAlert({ title: 'Error', message: err.message, type: 'danger' });
+    }
+  };
+
+  const handleUpdateUserRate = async (userId: string) => {
+    const newRate = rateInputs[userId];
+    if (newRate === undefined || isNaN(newRate)) return;
+    setSavingRateUserId(userId);
+    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
+    try {
+      const res = await fetch('/api/admin/commissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-email': emailToUse },
+        body: JSON.stringify({ action: 'UPDATE_USER_RATE', userId, commissionRate: newRate }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCommissionReports(data.reports || []);
+        setCommissionSummary(data.summary || null);
+        await showAlert({
+          title: 'Client Commission Rate Saved',
+          message: `Commission rate for client ${userId} set to ${newRate}%.`,
+          type: 'success',
+        });
+      }
+    } catch (err: any) {
+      await showAlert({ title: 'Error', message: err.message, type: 'danger' });
+    } finally {
+      setSavingRateUserId(null);
+    }
+  };
+
+  const handleSettleCommission = async (record: CommissionRecord) => {
+    const confirmed = await showConfirm({
+      title: `Settle Commission for ${record.clientLabel}`,
+      message: `Mark ₹${record.pendingCommission.toLocaleString('en-IN')} commission as settled/collected for client ${record.tokenCode}? Total net profit generated by this user: ₹${record.netProfit.toLocaleString('en-IN')}.`,
+      type: 'warning',
+      confirmText: 'Mark Settled & Collected',
+    });
+    if (!confirmed) return;
+
+    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
+    try {
+      const res = await fetch('/api/admin/commissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-email': emailToUse },
+        body: JSON.stringify({
+          action: 'SETTLE_USER_COMMISSION',
+          userId: record.userId,
+          settledAmount: record.commissionDue,
+          notes: `Settled on ${new Date().toLocaleDateString('en-IN')}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCommissionReports(data.reports || []);
+        setCommissionSummary(data.summary || null);
+        await showAlert({
+          title: 'Commission Settled',
+          message: `Successfully settled ₹${record.pendingCommission.toLocaleString('en-IN')} commission from client ${record.clientLabel}.`,
+          type: 'success',
+        });
+      }
+    } catch (err: any) {
+      await showAlert({ title: 'Error', message: err.message, type: 'danger' });
+    }
+  };
+
+  const handleExportCommissionCSV = () => {
+    if (!commissionReports.length) return;
+    const headers = [
+      'Client Code',
+      'Client Label',
+      'Status',
+      'Trades Count',
+      'Win Rate %',
+      'Gross Profit (INR)',
+      'Gross Loss (INR)',
+      'Net Profit (INR)',
+      'Commission Rate %',
+      'Commission Due (INR)',
+      'Settled Commission (INR)',
+      'Pending Commission (INR)',
+      'Settlement Status',
+      'Last Trade Time',
+    ];
+
+    const rows = commissionReports.map((r) => [
+      r.tokenCode,
+      `"${r.clientLabel}"`,
+      r.isActive ? 'ACTIVE' : 'REVOKED',
+      r.totalTrades,
+      `${r.winRate}%`,
+      r.grossProfit,
+      r.grossLoss,
+      r.netProfit,
+      `${r.commissionRate}%`,
+      r.commissionDue,
+      r.settledCommission,
+      r.pendingCommission,
+      r.settlementStatus,
+      `"${r.lastTradeTime || '-'}"`,
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `algo_client_commissions_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleRunBacktest = async (e?: React.FormEvent) => {
@@ -361,7 +573,7 @@ export default function AdminPage() {
       </div>
 
       {/* Admin Feature Navigation Tabs */}
-      <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+      <div className="flex items-center gap-3 border-b border-slate-800 pb-3 flex-wrap">
         <button
           type="button"
           onClick={() => setActiveTab('TOKENS')}
@@ -373,6 +585,27 @@ export default function AdminPage() {
         >
           <Key className="w-4 h-4" />
           <span>Access Code Command Center</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('COMMISSIONS');
+            fetchCommissions();
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'COMMISSIONS'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 shadow-lg shadow-emerald-500/20 font-black'
+              : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-slate-800'
+          }`}
+        >
+          <DollarSign className="w-4 h-4" />
+          <span>Client Earnings & Commissions</span>
+          {commissionSummary && commissionSummary.totalPendingCommission > 0 && (
+            <span className="text-[10px] bg-slate-950 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded-full border border-emerald-500/40">
+              ₹{commissionSummary.totalPendingCommission.toLocaleString('en-IN')} Due
+            </span>
+          )}
         </button>
 
         <button
@@ -543,7 +776,284 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* TAB 2: REAL MARKET DATA BACKTESTING (ADMIN EXCLUSIVE) */}
+      {/* TAB 2: CLIENT EARNINGS & COMMISSIONS COMMAND CENTER */}
+      {activeTab === 'COMMISSIONS' && (
+        <div className="space-y-6">
+          {/* Top 4 Commission KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Client Profits */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-1">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+                <span>Client Net Earnings</span>
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-2xl font-black font-mono text-emerald-400">
+                ₹{commissionSummary ? commissionSummary.totalNetProfit.toLocaleString('en-IN') : '0.00'}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Total net profits made by all active clients
+              </p>
+            </div>
+
+            {/* Pending Commission to Collect */}
+            <div className="p-5 rounded-2xl bg-gradient-to-tr from-slate-900 via-amber-950/20 to-slate-900 border border-amber-500/40 shadow-xl space-y-1">
+              <div className="flex items-center justify-between text-amber-400 text-xs font-semibold">
+                <span>Commission Due to You</span>
+                <Coins className="w-4 h-4 text-amber-400 animate-pulse" />
+              </div>
+              <div className="text-2xl font-black font-mono text-amber-300">
+                ₹{commissionSummary ? commissionSummary.totalPendingCommission.toLocaleString('en-IN') : '0.00'}
+              </div>
+              <p className="text-[11px] text-amber-400/80">
+                Pending profit-share commission to collect
+              </p>
+            </div>
+
+            {/* Settled / Realized Commission */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-1">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+                <span>Settled Commissions</span>
+                <Receipt className="w-4 h-4 text-teal-400" />
+              </div>
+              <div className="text-2xl font-black font-mono text-teal-400">
+                ₹{commissionSummary ? commissionSummary.totalSettledCommission.toLocaleString('en-IN') : '0.00'}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Already collected & settled in your account
+              </p>
+            </div>
+
+            {/* Total Clients / Renters */}
+            <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl space-y-1">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
+                <span>Total Client Passes</span>
+                <Users className="w-4 h-4 text-cyan-400" />
+              </div>
+              <div className="text-2xl font-black font-mono text-white">
+                {commissionSummary?.activeClients || 0} <span className="text-sm font-normal text-slate-500">/ {commissionSummary?.totalClients || 0} Active</span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Default Rate: {commissionSummary?.defaultRate || 20}% profit cut
+              </p>
+            </div>
+          </div>
+
+          {/* Global Commission Setting & Controls Ribbon */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  Global Default Profit Share Commission
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Standard cut charged from every client on their net profitable trades.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 focus-within:border-emerald-500">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={defaultCommissionRate}
+                  onChange={(e) => setDefaultCommissionRate(Number(e.target.value))}
+                  className="w-14 bg-transparent text-white font-mono font-bold text-sm outline-none text-center"
+                />
+                <span className="text-xs font-bold text-slate-400">%</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleUpdateDefaultRate}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all shadow-md active:scale-95"
+              >
+                Save Global Rate
+              </button>
+            </div>
+          </div>
+
+          {/* Client Breakdown Table */}
+          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-emerald-400" />
+                <h2 className="text-lg font-bold text-white">Client Performance & Commission Ledger</h2>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Filter buttons */}
+                <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                  <button
+                    onClick={() => setCommissionFilter('ALL')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      commissionFilter === 'ALL' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    All ({commissionReports.length})
+                  </button>
+                  <button
+                    onClick={() => setCommissionFilter('PENDING')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      commissionFilter === 'PENDING' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Pending Due ({commissionReports.filter((r) => r.settlementStatus === 'PENDING').length})
+                  </button>
+                  <button
+                    onClick={() => setCommissionFilter('PROFITABLE')}
+                    className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                      commissionFilter === 'PROFITABLE' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    In Profit ({commissionReports.filter((r) => r.netProfit > 0).length})
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => fetchCommissions()}
+                  disabled={loadingCommissions}
+                  className="p-2 rounded-xl bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white transition-all"
+                  title="Refresh Client Commissions"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingCommissions ? 'animate-spin' : ''}`} />
+                </button>
+
+                <button
+                  onClick={handleExportCommissionCSV}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-3">Client Token</th>
+                    <th className="py-3 px-3">Label</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3 text-center">Trades / Win Rate</th>
+                    <th className="py-3 px-3 text-right">Net Profit</th>
+                    <th className="py-3 px-3 text-center">Commission Cut %</th>
+                    <th className="py-3 px-3 text-right">Commission Due</th>
+                    <th className="py-3 px-3 text-center">Settlement</th>
+                    <th className="py-3 px-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80 font-mono text-xs">
+                  {commissionReports
+                    .filter((r) => {
+                      if (commissionFilter === 'PENDING') return r.settlementStatus === 'PENDING';
+                      if (commissionFilter === 'PROFITABLE') return r.netProfit > 0;
+                      return true;
+                    })
+                    .map((r) => {
+                      const isPending = r.settlementStatus === 'PENDING';
+                      const isSettled = r.settlementStatus === 'SETTLED';
+
+                      return (
+                        <tr key={r.userId} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="py-3.5 px-3 font-bold text-white font-mono">
+                            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-cyan-400">
+                              {r.tokenCode}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 font-sans font-medium text-slate-200">
+                            {r.clientLabel}
+                          </td>
+                          <td className="py-3.5 px-3 font-sans">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              r.isActive ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                            }`}>
+                              {r.isActive ? 'ACTIVE' : 'REVOKED'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 text-center font-sans">
+                            <span className="text-white font-bold">{r.totalTrades}</span> trades
+                            <span className="text-slate-500 text-[11px] block">{r.winRate}% Win Rate</span>
+                          </td>
+                          <td className={`py-3.5 px-3 text-right font-bold ${
+                            r.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {r.netProfit >= 0 ? '+' : ''}₹{r.netProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-3.5 px-3 text-center">
+                            <div className="inline-flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={rateInputs[r.userId] ?? r.commissionRate}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  setRateInputs((prev) => ({ ...prev, [r.userId]: val }));
+                                }}
+                                className="w-10 bg-transparent text-white font-mono font-bold text-xs outline-none text-center"
+                              />
+                              <span className="text-[10px] text-slate-400">%</span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateUserRate(r.userId)}
+                                disabled={savingRateUserId === r.userId}
+                                className="p-1 rounded bg-slate-800 hover:bg-emerald-600 hover:text-slate-950 text-slate-300 transition-colors"
+                                title="Save custom rate for this user"
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-bold text-amber-300">
+                            {r.commissionDue > 0 ? `₹${r.commissionDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00'}
+                          </td>
+                          <td className="py-3.5 px-3 text-center font-sans">
+                            {isPending && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                                PENDING ₹{r.pendingCommission.toLocaleString('en-IN')}
+                              </span>
+                            )}
+                            {isSettled && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                SETTLED ✓
+                              </span>
+                            )}
+                            {r.settlementStatus === 'NO_PROFIT' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] text-slate-500 bg-slate-950 border border-slate-800">
+                                NO PROFIT
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3 text-center font-sans">
+                            {isPending ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSettleCommission(r)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-all shadow-md active:scale-95"
+                              >
+                                Mark Paid 💸
+                              </button>
+                            ) : (
+                              <span className="text-slate-500 text-xs">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: REAL MARKET DATA BACKTESTING (ADMIN EXCLUSIVE) */}
       {activeTab === 'BACKTEST' && (
         <div className="space-y-6">
           {/* Backtest Configuration Card */}

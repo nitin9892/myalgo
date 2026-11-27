@@ -1,17 +1,31 @@
 import { IBrokerAdapter, Candle, OrderRequest, OrderResult, Position } from './types';
 
-// Common Dhan Security IDs for major indices & liquid equities
+// Common Dhan Security IDs for major indices & liquid equities (NSE & BSE)
 const DHAN_SECURITY_MAP: Record<string, { securityId: string; segment: string }> = {
+  // Indices
   'NIFTY': { securityId: '13', segment: 'IDX_I' },
   'BANKNIFTY': { securityId: '25', segment: 'IDX_I' },
   'FINNIFTY': { securityId: '27', segment: 'IDX_I' },
+  'MIDCPNIFTY': { securityId: '44', segment: 'IDX_I' },
+  'SENSEX': { securityId: '51', segment: 'IDX_I' },
+
+  // Top Liquid Indian Equities (NSE_EQ)
   'RELIANCE': { securityId: '2885', segment: 'NSE_EQ' },
   'TCS': { securityId: '11536', segment: 'NSE_EQ' },
   'INFY': { securityId: '1594', segment: 'NSE_EQ' },
   'HDFCBANK': { securityId: '1333', segment: 'NSE_EQ' },
-  'TATAMOTORS': { securityId: '3456', segment: 'NSE_EQ' },
+  'ICICIBANK': { securityId: '4963', segment: 'NSE_EQ' },
   'SBIN': { securityId: '3045', segment: 'NSE_EQ' },
+  'TATAMOTORS': { securityId: '3456', segment: 'NSE_EQ' },
+  'BAJFINANCE': { securityId: '317', segment: 'NSE_EQ' },
+  'ITC': { securityId: '1660', segment: 'NSE_EQ' },
+  'LT': { securityId: '11483', segment: 'NSE_EQ' },
+  'AXISBANK': { securityId: '5900', segment: 'NSE_EQ' },
+  'KOTAKBANK': { securityId: '1922', segment: 'NSE_EQ' },
+  'BHARTIARTL': { securityId: '10604', segment: 'NSE_EQ' },
   'IDEA': { securityId: '14366', segment: 'NSE_EQ' },
+  'ZOMATO': { securityId: '5097', segment: 'NSE_EQ' },
+  'TATASTEEL': { securityId: '3499', segment: 'NSE_EQ' },
 };
 
 export class DhanAdapter implements IBrokerAdapter {
@@ -21,8 +35,8 @@ export class DhanAdapter implements IBrokerAdapter {
   private baseUrl = 'https://api.dhan.co/v2';
 
   constructor(clientId?: string, accessToken?: string) {
-    this.clientId = clientId || process.env.DHAN_CLIENT_ID || '';
-    this.accessToken = accessToken || process.env.DHAN_ACCESS_TOKEN || '';
+    this.clientId = (clientId || process.env.DHAN_CLIENT_ID || '').trim();
+    this.accessToken = (accessToken || process.env.DHAN_ACCESS_TOKEN || '').trim();
   }
 
   private getHeaders() {
@@ -34,26 +48,82 @@ export class DhanAdapter implements IBrokerAdapter {
     };
   }
 
-  async testConnection(): Promise<{ success: boolean; message: string }> {
+  async testConnection(): Promise<{ 
+    success: boolean; 
+    message: string;
+    balance?: number;
+    currency?: string;
+    balanceDisplay?: string;
+    accountStatus?: 'CONNECTED' | 'DISCONNECTED';
+  }> {
     if (!this.clientId || !this.accessToken) {
-      return { success: false, message: 'Dhan Client ID or Access Token is missing' };
+      return { 
+        success: false, 
+        message: 'Dhan Client ID or 24-hr Access Token is missing. Enter credentials to connect.',
+        accountStatus: 'DISCONNECTED',
+      };
     }
+
     try {
-      // Test with profile endpoint
+      // 1. First probe live fund limits for real-time wallet balance
+      const fundRes = await fetch(`${this.baseUrl}/fundlimit`, {
+        headers: this.getHeaders(),
+      });
+
+      if (fundRes.ok) {
+        const data = await fundRes.json();
+        const rawBal = typeof data.availabelBalance === 'number' 
+          ? data.availabelBalance 
+          : (typeof data.sodLimit === 'number' ? data.sodLimit : 0);
+        
+        const balance = Number(rawBal.toFixed(2));
+        const formatted = `₹${balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR`;
+
+        return { 
+          success: true, 
+          message: `Connected to DhanHQ Live! Client: ${data.dhanClientId || this.clientId} • Available Margin: ${formatted}`,
+          balance,
+          currency: 'INR',
+          balanceDisplay: formatted,
+          accountStatus: 'CONNECTED',
+        };
+      }
+
+      // 2. Fallback to profile check
       const res = await fetch(`${this.baseUrl}/profile`, {
         headers: this.getHeaders(),
       });
+
       if (res.ok) {
         const data = await res.json();
         return { 
           success: true, 
-          message: `Connected to DhanHQ! Client: ${data.dhanClientId || this.clientId}` 
+          message: `Connected to DhanHQ Live! Client ID: ${data.dhanClientId || this.clientId}`,
+          balance: 0,
+          currency: 'INR',
+          balanceDisplay: '₹0.00 INR (Connected)',
+          accountStatus: 'CONNECTED',
         };
       }
+
       const errText = await res.text();
-      return { success: false, message: `Dhan Auth Failed: ${errText || res.statusText}` };
+      let parsedErr = errText;
+      try {
+        const errObj = JSON.parse(errText);
+        parsedErr = errObj.remarks || errObj.message || errText;
+      } catch {}
+
+      return { 
+        success: false, 
+        message: `DhanHQ Authentication Failed: ${parsedErr || res.statusText}. Please verify your Client ID & 24hr Access Token.`,
+        accountStatus: 'DISCONNECTED',
+      };
     } catch (err: any) {
-      return { success: false, message: err.message || 'Connection failed' };
+      return { 
+        success: false, 
+        message: err.message || 'Failed connecting to DhanHQ API server.',
+        accountStatus: 'DISCONNECTED',
+      };
     }
   }
 

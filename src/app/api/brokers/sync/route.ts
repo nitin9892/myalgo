@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { getBrokerAdapter } from '@/lib/brokers';
 import { BrokerType } from '@/lib/brokers/types';
 import { saveRiskConfiguration } from '@/lib/risk/engine';
@@ -18,6 +20,23 @@ export async function POST(request: Request) {
 
     const adapter = getBrokerAdapter(broker as BrokerType, credentials);
     const result = await adapter.testConnection();
+
+    // If connection succeeds, persist credentials for autonomous background engine execution
+    if (result.success) {
+      try {
+        const credsDir = path.join(process.cwd(), 'data');
+        if (!fs.existsSync(credsDir)) fs.mkdirSync(credsDir, { recursive: true });
+        const credsFile = path.join(credsDir, 'broker_creds.json');
+        let existing: Record<string, any> = {};
+        if (fs.existsSync(credsFile)) {
+          try { existing = JSON.parse(fs.readFileSync(credsFile, 'utf-8')); } catch {}
+        }
+        existing[broker] = credentials;
+        fs.writeFileSync(credsFile, JSON.stringify(existing, null, 2), 'utf-8');
+      } catch (saveErr: any) {
+        console.warn('Could not save credentials to broker_creds.json:', saveErr.message);
+      }
+    }
 
     // If connection succeeds and balance is available, automatically sync into risk engine wallet balance
     if (result.success && typeof result.balance === 'number' && result.balance > 0) {
