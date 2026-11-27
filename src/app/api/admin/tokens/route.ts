@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isAuthorizedAdminEmail } from '@/lib/auth/admin';
+import { getAdminAuthFromRequest } from '@/lib/auth/admin';
 import { 
   getAllAccessTokens, 
   createAccessToken, 
@@ -8,32 +8,8 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-// Multi-source helper to verify admin authentication (cookie, header, or body)
-function checkAdminAuth(request: Request, body?: any): { authorized: boolean; email?: string } {
-  // 1. Check Cookie
-  const cookieHeader = request.headers.get('cookie') || '';
-  const match = cookieHeader.match(/myalgo_admin_session=([^;]+)/);
-  if (match) {
-    const email = decodeURIComponent(match[1]);
-    if (isAuthorizedAdminEmail(email)) return { authorized: true, email };
-  }
-
-  // 2. Check x-admin-email header
-  const headerEmail = request.headers.get('x-admin-email');
-  if (headerEmail && isAuthorizedAdminEmail(headerEmail)) {
-    return { authorized: true, email: headerEmail.trim() };
-  }
-
-  // 3. Check body email
-  if (body?.adminEmail && isAuthorizedAdminEmail(body.adminEmail)) {
-    return { authorized: true, email: body.adminEmail.trim() };
-  }
-
-  return { authorized: false };
-}
-
 export async function GET(request: Request) {
-  const auth = checkAdminAuth(request);
+  const auth = getAdminAuthFromRequest(request);
   if (!auth.authorized) {
     return NextResponse.json({ error: 'Unauthorized: Admin login required' }, { status: 401 });
   }
@@ -48,12 +24,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const auth = checkAdminAuth(request, body);
+    const auth = getAdminAuthFromRequest(request);
     if (!auth.authorized) {
       return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 401 });
     }
 
+    const body = await request.json();
     const { 
       code, 
       label, 
@@ -90,12 +66,12 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const body = await request.json();
-    const auth = checkAdminAuth(request, body);
+    const auth = getAdminAuthFromRequest(request);
     if (!auth.authorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const body = await request.json();
     const { id, is_active } = body;
     if (!id || typeof is_active !== 'boolean') {
       return NextResponse.json({ error: 'Invalid token parameters' }, { status: 400 });
@@ -114,12 +90,13 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    const auth = checkAdminAuth(request);
+    const auth = getAdminAuthFromRequest(request);
     if (!auth.authorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json({ error: 'Missing token ID' }, { status: 400 });

@@ -232,13 +232,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </button>
 
         <div className="flex items-center justify-between text-slate-400 pt-1">
-          <Link 
-            href="/admin" 
-            onClick={onClose}
-            className="flex items-center gap-1.5 text-cyan-400 hover:underline font-semibold py-0.5 text-[11px]"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" /> Admin Portal
-          </Link>
+          <span className="text-[10px] text-slate-500 font-mono font-medium">TERMINAL v2.4</span>
           <button
             onClick={handleLockTerminal}
             className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors font-medium py-0.5 text-[11px]"

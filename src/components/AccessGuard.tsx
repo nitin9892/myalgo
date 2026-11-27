@@ -219,15 +219,10 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
           </button>
         </form>
 
-        {/* Footer Admin Link */}
+        {/* Footer Support Info */}
         <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
-          <span>Need an access code? Contact Admin</span>
-          <Link
-            href="/admin"
-            className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" /> Admin Portal
-          </Link>
+          <span>Need an access code? Contact your administrator.</span>
+          <span className="font-mono text-[10px] text-slate-600">ENCRYPTED VAULT</span>
         </div>
       </div>
     </div>

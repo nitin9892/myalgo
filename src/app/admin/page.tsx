@@ -87,6 +87,7 @@ interface CommissionSummary {
 export default function AdminPage() {
   const { showAlert, showConfirm } = useModal();
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [adminEmail, setAdminEmail] = useState('');
   const [passcode, setPasscode] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -136,16 +137,46 @@ export default function AdminPage() {
   const [tokenCommissionRate, setTokenCommissionRate] = useState<number>(20);
   const [creatingToken, setCreatingToken] = useState(false);
 
+  // Helper to attach verified HMAC Bearer token to all admin requests
+  const getAdminAuthHeaders = (overrideToken?: string) => {
+    const token = overrideToken || (typeof window !== 'undefined' ? localStorage.getItem('myalgo_admin_token') || '' : '');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'x-admin-token': token,
+    };
+  };
+
   useEffect(() => {
-    // Check saved admin session
-    const savedAdmin = localStorage.getItem('myalgo_admin_email');
-    if (savedAdmin) {
-      setIsAdminLoggedIn(true);
-      setAdminEmail(savedAdmin);
-      document.cookie = `myalgo_admin_session=${encodeURIComponent(savedAdmin)}; Path=/; Max-Age=604800;`;
-      fetchTokens(savedAdmin);
-      fetchCommissions(savedAdmin);
-    }
+    // Cryptographically verify admin session against server on page load
+    const verifySession = async () => {
+      const savedToken = localStorage.getItem('myalgo_admin_token');
+      if (!savedToken) {
+        setIsAdminLoggedIn(false);
+        setCheckingAuth(false);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/admin/verify', {
+          headers: getAdminAuthHeaders(savedToken),
+        });
+        const data = await res.json();
+        if (data.success && data.authorized && data.email) {
+          setIsAdminLoggedIn(true);
+          setAdminEmail(data.email);
+          fetchTokens(savedToken);
+          fetchCommissions(savedToken);
+        } else {
+          handleAdminLogout();
+        }
+      } catch {
+        handleAdminLogout();
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
+
+    verifySession();
   }, []);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -160,14 +191,16 @@ export default function AdminPage() {
         body: JSON.stringify({ email: adminEmail.trim(), passcode }),
       });
       const data = await res.json();
-      if (data.success) {
-        localStorage.setItem('myalgo_admin_email', adminEmail.trim());
-        document.cookie = `myalgo_admin_session=${encodeURIComponent(adminEmail.trim())}; Path=/; Max-Age=604800;`;
+      if (data.success && data.token) {
+        localStorage.setItem('myalgo_admin_token', data.token);
+        localStorage.setItem('myalgo_admin_email', data.adminEmail || adminEmail.trim());
         setIsAdminLoggedIn(true);
-        fetchTokens(adminEmail.trim());
-        fetchCommissions(adminEmail.trim());
+        setAdminEmail(data.adminEmail || adminEmail.trim());
+        setPasscode('');
+        fetchTokens(data.token);
+        fetchCommissions(data.token);
       } else {
-        setLoginError(data.message || 'Login failed');
+        setLoginError(data.message || 'Login failed: Invalid credentials');
       }
     } catch {
       setLoginError('Server connection error');
@@ -177,20 +210,25 @@ export default function AdminPage() {
   };
 
   const handleAdminLogout = () => {
+    localStorage.removeItem('myalgo_admin_token');
     localStorage.removeItem('myalgo_admin_email');
+    document.cookie = 'myalgo_admin_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
     document.cookie = 'myalgo_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
     setIsAdminLoggedIn(false);
+    setAdminEmail('');
+    setPasscode('');
   };
 
-  const fetchTokens = async (overrideEmail?: string) => {
+  const fetchTokens = async (overrideToken?: string) => {
     setLoadingTokens(true);
-    const emailToUse = overrideEmail || adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/tokens', {
-        headers: {
-          'x-admin-email': emailToUse,
-        },
+        headers: getAdminAuthHeaders(overrideToken),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       const data = await res.json();
       if (data.tokens) {
         setTokens(data.tokens);
@@ -215,25 +253,28 @@ export default function AdminPage() {
     e.preventDefault();
     if (!newTokenCode) return;
     setCreatingToken(true);
-    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/tokens', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'x-admin-email': emailToUse,
+          ...getAdminAuthHeaders(),
         },
         body: JSON.stringify({
           code: newTokenCode,
           label: newTokenLabel || 'Trader Access',
           max_uses: maxUses,
           expires_in_days: expiryDays,
-          adminEmail: emailToUse,
+          adminEmail,
           allowed_brokers: allowedBrokers,
           allowed_strategies: allowedStrategies,
           commission_rate: tokenCommissionRate,
         }),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         await showAlert({
@@ -243,7 +284,7 @@ export default function AdminPage() {
         });
         setNewTokenCode('');
         setNewTokenLabel('');
-        fetchTokens(emailToUse);
+        fetchTokens();
       } else {
         await showAlert({
           title: 'Token Generation Failed',
@@ -263,16 +304,19 @@ export default function AdminPage() {
   };
 
   const handleToggleActive = async (id: string, currentStatus: boolean) => {
-    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/tokens', {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
-          'x-admin-email': emailToUse,
+          ...getAdminAuthHeaders(),
         },
-        body: JSON.stringify({ id, is_active: !currentStatus, adminEmail: emailToUse }),
+        body: JSON.stringify({ id, is_active: !currentStatus, adminEmail }),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       if (res.ok) {
         setTokens((prev) =>
           prev.map((t) => (t.id === id ? { ...t, is_active: !currentStatus } : t))
@@ -284,7 +328,7 @@ export default function AdminPage() {
             : 'Access code has been paused/revoked. Any user on this access code will be automatically logged out within seconds.',
           type: !currentStatus ? 'success' : 'warning',
         });
-        fetchTokens(emailToUse);
+        fetchTokens();
       }
     } catch (err) {
       console.error(err);
@@ -297,13 +341,16 @@ export default function AdminPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const fetchCommissions = async (overrideEmail?: string) => {
+  const fetchCommissions = async (overrideToken?: string) => {
     setLoadingCommissions(true);
-    const emailToUse = overrideEmail || adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/commissions', {
-        headers: { 'x-admin-email': emailToUse },
+        headers: getAdminAuthHeaders(overrideToken),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setCommissionReports(data.reports || []);
@@ -325,13 +372,16 @@ export default function AdminPage() {
   };
 
   const handleUpdateDefaultRate = async () => {
-    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/commissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-email': emailToUse },
+        headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
         body: JSON.stringify({ action: 'UPDATE_DEFAULT_RATE', defaultRate: defaultCommissionRate }),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setCommissionReports(data.reports || []);
@@ -351,13 +401,16 @@ export default function AdminPage() {
     const newRate = rateInputs[userId];
     if (newRate === undefined || isNaN(newRate)) return;
     setSavingRateUserId(userId);
-    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/commissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-email': emailToUse },
+        headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
         body: JSON.stringify({ action: 'UPDATE_USER_RATE', userId, commissionRate: newRate }),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setCommissionReports(data.reports || []);
@@ -384,11 +437,10 @@ export default function AdminPage() {
     });
     if (!confirmed) return;
 
-    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
     try {
       const res = await fetch('/api/admin/commissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-email': emailToUse },
+        headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
         body: JSON.stringify({
           action: 'SETTLE_USER_COMMISSION',
           userId: record.userId,
@@ -396,6 +448,10 @@ export default function AdminPage() {
           notes: `Settled on ${new Date().toLocaleDateString('en-IN')}`,
         }),
       });
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setCommissionReports(data.reports || []);
@@ -461,7 +517,6 @@ export default function AdminPage() {
     if (e) e.preventDefault();
     setRunningBacktest(true);
     setBacktestError(null);
-    const emailToUse = adminEmail || localStorage.getItem('myalgo_admin_email') || '';
 
     try {
       const capitalToUse = Math.max(100, Number(btCapital) || 100000);
@@ -469,7 +524,7 @@ export default function AdminPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-email': emailToUse,
+          ...getAdminAuthHeaders(),
         },
         body: JSON.stringify({
           strategy: btStrategy,
@@ -480,9 +535,14 @@ export default function AdminPage() {
           perTradeRiskPct: btRiskPct,
           leverage: btLeverage,
           trailingEnabled: btTrailing,
-          adminEmail: emailToUse,
+          adminEmail,
         }),
       });
+
+      if (res.status === 401) {
+        handleAdminLogout();
+        return;
+      }
 
       const data = await res.json();
       if (data.success && data.results) {
@@ -496,6 +556,18 @@ export default function AdminPage() {
       setRunningBacktest(false);
     }
   };
+
+  // 0. Security Verification State
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-slate-400 font-mono">Verifying Master Security Credentials...</p>
+        </div>
+      </div>
+    );
+  }
 
   // 1. Admin Login Screen
   if (!isAdminLoggedIn) {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAdminAuthFromRequest } from '@/lib/auth/admin';
 import { 
   getAllUserCommissionReports, 
   updateUserCommission, 
@@ -8,19 +9,10 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-function isAuthorizedAdmin(request: Request): boolean {
-  const adminEmail = request.headers.get('x-admin-email');
-  if (adminEmail && adminEmail.trim()) return true;
-
-  const cookieHeader = request.headers.get('cookie') || '';
-  if (cookieHeader.includes('myalgo_admin_session')) return true;
-
-  return false;
-}
-
 export async function GET(request: Request) {
   try {
-    if (!isAuthorizedAdmin(request)) {
+    const auth = getAdminAuthFromRequest(request);
+    if (!auth.authorized) {
       return NextResponse.json({ success: false, message: 'Unauthorized admin access' }, { status: 401 });
     }
 
@@ -33,7 +25,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    if (!isAuthorizedAdmin(request)) {
+    const auth = getAdminAuthFromRequest(request);
+    if (!auth.authorized) {
       return NextResponse.json({ success: false, message: 'Unauthorized admin access' }, { status: 401 });
     }
 
