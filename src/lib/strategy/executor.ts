@@ -173,10 +173,23 @@ export async function runTradingEngineCycle() {
     // ------------------------------------------------------------------------
     let brokerCreds: any = undefined;
     try {
-      const credsFile = path.join(process.cwd(), 'data', 'broker_creds.json');
+      const credsDir = path.join(process.cwd(), 'data');
+      const credsFile = path.join(credsDir, 'broker_creds.json');
       if (fs.existsSync(credsFile)) {
         const parsed = JSON.parse(fs.readFileSync(credsFile, 'utf-8'));
         brokerCreds = parsed[masterStrategy.broker_name];
+      }
+      if (!brokerCreds && fs.existsSync(credsDir)) {
+        const userCredFiles = fs.readdirSync(credsDir).filter(f => f.startsWith('broker_creds_') && f.endsWith('.json'));
+        for (const uf of userCredFiles) {
+          try {
+            const up = JSON.parse(fs.readFileSync(path.join(credsDir, uf), 'utf-8'));
+            if (up && up[masterStrategy.broker_name]) {
+              brokerCreds = up[masterStrategy.broker_name];
+              break;
+            }
+          } catch {}
+        }
       }
     } catch {}
 

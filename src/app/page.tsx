@@ -142,11 +142,21 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
+  const getUserTokenClean = () => {
+    if (typeof window === 'undefined') return 'DEFAULT_TRADER';
+    const raw = localStorage.getItem('myalgo_access_token') || 'DEFAULT_TRADER';
+    return raw.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+  };
+
+  const getCredsStorageKey = () => `myalgo_broker_creds_${getUserTokenClean()}`;
+  const getStatusStorageKey = () => `myalgo_broker_status_${getUserTokenClean()}`;
+
   // Live real-time balance auto-sync from broker API
   const syncLiveBrokerBalance = async () => {
     try {
-      const savedCreds = localStorage.getItem('myalgo_broker_creds');
-      const savedStatus = localStorage.getItem('myalgo_broker_status');
+      const token = getUserTokenClean();
+      const savedCreds = localStorage.getItem(getCredsStorageKey());
+      const savedStatus = localStorage.getItem(getStatusStorageKey());
       if (!savedCreds || !savedStatus) return;
 
       const creds = JSON.parse(savedCreds);
@@ -163,8 +173,11 @@ export default function DashboardPage() {
       setIsSyncingBalance(true);
       const res = await fetch('/api/brokers/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ broker: activeBroker, credentials: brokerCreds }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-access-token': token,
+        },
+        body: JSON.stringify({ broker: activeBroker, credentials: brokerCreds, userId: token }),
       });
 
       const data = await res.json();
@@ -181,7 +194,7 @@ export default function DashboardPage() {
             lastSynced: data.syncedAt,
           },
         };
-        localStorage.setItem('myalgo_broker_status', JSON.stringify(updatedStatus));
+        localStorage.setItem(getStatusStorageKey(), JSON.stringify(updatedStatus));
         setConnectedBrokers(updatedStatus);
         setLastBalanceSyncTime(new Date().toLocaleTimeString());
       }
@@ -265,10 +278,22 @@ export default function DashboardPage() {
         }
       }
 
-      // 5. Read connected brokers from localStorage
-      const savedBrokerStatus = localStorage.getItem('myalgo_broker_status');
+      // 5. Read connected brokers from user-scoped storage & backend sync
+      const token = getUserTokenClean();
+      const savedBrokerStatus = localStorage.getItem(getStatusStorageKey());
       if (savedBrokerStatus) {
         setConnectedBrokers(JSON.parse(savedBrokerStatus));
+      } else {
+        try {
+          const syncRes = await fetch('/api/brokers/sync', {
+            headers: { 'x-access-token': token },
+          });
+          const syncData = await syncRes.json();
+          if (syncData.success && syncData.status) {
+            setConnectedBrokers(syncData.status);
+            try { localStorage.setItem(getStatusStorageKey(), JSON.stringify(syncData.status)); } catch {}
+          }
+        } catch {}
       }
 
       setLastUpdated(new Date().toLocaleTimeString());
@@ -402,7 +427,7 @@ export default function DashboardPage() {
 
     setSquaringOffId(pos.id);
     try {
-      const savedCreds = localStorage.getItem('myalgo_broker_creds');
+      const savedCreds = localStorage.getItem(getCredsStorageKey());
       const creds = savedCreds ? JSON.parse(savedCreds) : {};
 
       const res = await fetch('/api/trades', {
@@ -445,7 +470,7 @@ export default function DashboardPage() {
   const activeBrokerData = connectedEntry ? connectedEntry[1] : null;
 
   const handleLaunchAlgo = async () => {
-    const savedStatus = localStorage.getItem('myalgo_broker_status');
+    const savedStatus = localStorage.getItem(getStatusStorageKey());
     const statusObj = savedStatus ? JSON.parse(savedStatus) : {};
     const isConnected = !!statusObj[selectedBroker]?.success;
 
@@ -507,23 +532,27 @@ export default function DashboardPage() {
   const handleQuickConnect = async () => {
     setConnectingBroker(true);
     try {
+      const token = getUserTokenClean();
       const credsToSend = selectedBroker === 'DHAN'
         ? { clientId: quickCreds.clientId, accessToken: quickCreds.accessToken }
         : { apiKey: quickCreds.apiKey, apiSecret: quickCreds.apiSecret, region: 'INDIA' };
 
       const res = await fetch('/api/brokers/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ broker: selectedBroker, credentials: credsToSend }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-access-token': token,
+        },
+        body: JSON.stringify({ broker: selectedBroker, credentials: credsToSend, userId: token }),
       });
       const data = await res.json();
       if (data.success) {
-        const savedCreds = localStorage.getItem('myalgo_broker_creds');
+        const savedCreds = localStorage.getItem(getCredsStorageKey());
         const credsObj = savedCreds ? JSON.parse(savedCreds) : {};
         credsObj[selectedBroker] = credsToSend;
-        localStorage.setItem('myalgo_broker_creds', JSON.stringify(credsObj));
+        localStorage.setItem(getCredsStorageKey(), JSON.stringify(credsObj));
 
-        const savedStatus = localStorage.getItem('myalgo_broker_status');
+        const savedStatus = localStorage.getItem(getStatusStorageKey());
         const statusObj = savedStatus ? JSON.parse(savedStatus) : {};
         statusObj[selectedBroker] = {
           success: true,
@@ -533,7 +562,7 @@ export default function DashboardPage() {
           accountStatus: 'CONNECTED',
           lastSynced: data.syncedAt,
         };
-        localStorage.setItem('myalgo_broker_status', JSON.stringify(statusObj));
+        localStorage.setItem(getStatusStorageKey(), JSON.stringify(statusObj));
         setConnectedBrokers(statusObj);
         setShowQuickConnectBroker(false);
 

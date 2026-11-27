@@ -39,11 +39,22 @@ interface BrokerConfig {
 export default function BrokersPage() {
   const { showConfirm, showAlert } = useModal();
   const [copiedIp, setCopiedIp] = useState(false);
+  const [serverIp, setServerIp] = useState<string>('42.108.76.75');
+  const [userToken, setUserToken] = useState<string>('');
   const [testingBroker, setTestingBroker] = useState<string | null>(null);
   const [firingOrder, setFiringOrder] = useState<string | null>(null);
   const [showEditCredentials, setShowEditCredentials] = useState(false);
   const [showAllBrokers, setShowAllBrokers] = useState(false);
   const [selectedCryptoSymbol, setSelectedCryptoSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'XRPUSD'>('BTCUSD');
+
+  const getUserTokenClean = () => {
+    if (typeof window === 'undefined') return 'DEFAULT_TRADER';
+    const raw = localStorage.getItem('myalgo_access_token') || 'DEFAULT_TRADER';
+    return raw.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
+  };
+
+  const getCredsStorageKey = () => `myalgo_broker_creds_${getUserTokenClean()}`;
+  const getStatusStorageKey = () => `myalgo_broker_status_${getUserTokenClean()}`;
 
   const [testStatus, setTestStatus] = useState<Record<string, {
     success: boolean;
@@ -55,7 +66,7 @@ export default function BrokersPage() {
   }>>({});
   const [orderStatus, setOrderStatus] = useState<Record<string, { success: boolean; message: string }>>({});
 
-  // Credentials state
+  // User-isolated credentials state (clean by default for every user)
   const [credentials, setCredentials] = useState<Record<string, Record<string, string>>>({
     DHAN: { clientId: '', accessToken: '' },
     DELTA: { apiKey: '', apiSecret: '', region: 'INDIA' },
@@ -63,24 +74,60 @@ export default function BrokersPage() {
   });
 
   useEffect(() => {
+    const token = getUserTokenClean();
+    setUserToken(token);
+
+    // 1. Load user-isolated credentials & status from scoped localStorage
     try {
-      const savedCreds = localStorage.getItem('myalgo_broker_creds');
+      const savedCreds = localStorage.getItem(getCredsStorageKey());
       if (savedCreds) {
         setCredentials((prev) => ({ ...prev, ...JSON.parse(savedCreds) }));
       }
-      const savedStatus = localStorage.getItem('myalgo_broker_status');
+      const savedStatus = localStorage.getItem(getStatusStorageKey());
       if (savedStatus) {
         setTestStatus(JSON.parse(savedStatus));
       }
     } catch {}
+
+    // 2. Fetch server-side status, masked credentials, and detected public server IP
+    const fetchServerSync = async () => {
+      try {
+        const res = await fetch('/api/brokers/sync', {
+          headers: { 'x-access-token': token },
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (data.serverIp) setServerIp(data.serverIp);
+          if (data.status && Object.keys(data.status).length > 0) {
+            setTestStatus((prev) => {
+              const updated = { ...prev, ...data.status };
+              try { localStorage.setItem(getStatusStorageKey(), JSON.stringify(updated)); } catch {}
+              return updated;
+            });
+          }
+          if (data.credentials && Object.keys(data.credentials).length > 0) {
+            setCredentials((prev) => {
+              const merged = { ...prev };
+              for (const [bId, fields] of Object.entries(data.credentials)) {
+                merged[bId] = { ...(merged[bId] || {}), ...(fields as any) };
+              }
+              return merged;
+            });
+          }
+        }
+      } catch {}
+    };
+
+    fetchServerSync();
   }, []);
 
-  // Periodic live balance auto-sync for connected broker
+  // Periodic live balance auto-sync for user's connected broker
   useEffect(() => {
     const autoSyncInterval = setInterval(async () => {
       try {
-        const savedCreds = localStorage.getItem('myalgo_broker_creds');
-        const savedStatus = localStorage.getItem('myalgo_broker_status');
+        const token = getUserTokenClean();
+        const savedCreds = localStorage.getItem(getCredsStorageKey());
+        const savedStatus = localStorage.getItem(getStatusStorageKey());
         if (!savedCreds || !savedStatus) return;
 
         const creds = JSON.parse(savedCreds);
@@ -90,8 +137,11 @@ export default function BrokersPage() {
         if (connectedId && creds[connectedId]) {
           const res = await fetch('/api/brokers/sync', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ broker: connectedId, credentials: creds[connectedId] }),
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-access-token': token,
+            },
+            body: JSON.stringify({ broker: connectedId, credentials: creds[connectedId], userId: token }),
           });
           const data = await res.json();
           if (data.success) {
@@ -108,7 +158,7 @@ export default function BrokersPage() {
                 },
               };
               try {
-                localStorage.setItem('myalgo_broker_status', JSON.stringify(updated));
+                localStorage.setItem(getStatusStorageKey(), JSON.stringify(updated));
               } catch {}
               return updated;
             });
@@ -135,7 +185,7 @@ export default function BrokersPage() {
         { key: 'apiKey', label: 'Delta API Key', placeholder: 'delta_api_key_...' },
         { key: 'apiSecret', label: 'Delta API Secret', placeholder: 'delta_secret_...', isSecret: true },
       ],
-      note: 'Delta Settings > API Keys: Permissions must have "Read" & "Trade" enabled. 💡 Pro-Tip: "Whitelisted IP address" field ko bilkul KHALI / EMPTY chhod dein taaki baar-baar IP change na karna pade.',
+      note: 'Delta Settings > API Keys: Permissions must have "Read" & "Trade" enabled. Whitelisted IP address field: Either paste the Server IP shown above, or leave it blank if your account allows unrestricted IP.',
     },
     {
       id: 'DHAN',
@@ -177,7 +227,7 @@ export default function BrokersPage() {
         [brokerId]: { ...prev[brokerId], [key]: value },
       };
       try {
-        localStorage.setItem('myalgo_broker_creds', JSON.stringify(updated));
+        localStorage.setItem(getCredsStorageKey(), JSON.stringify(updated));
       } catch {}
       return updated;
     });
@@ -193,13 +243,24 @@ export default function BrokersPage() {
 
   const testConnection = async (brokerId: string) => {
     setTestingBroker(brokerId);
+    const token = getUserTokenClean();
     try {
       const res = await fetch('/api/brokers/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ broker: brokerId, credentials: credentials[brokerId] }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-access-token': token,
+        },
+        body: JSON.stringify({ 
+          broker: brokerId, 
+          credentials: credentials[brokerId],
+          userId: token,
+        }),
       });
       const data = await res.json();
+      if (data.detectedIp) {
+        setServerIp(data.detectedIp);
+      }
       setTestStatus((prev) => {
         const updated = {
           ...prev,
@@ -213,7 +274,7 @@ export default function BrokersPage() {
           },
         };
         try {
-          localStorage.setItem('myalgo_broker_status', JSON.stringify(updated));
+          localStorage.setItem(getStatusStorageKey(), JSON.stringify(updated));
         } catch {}
         return updated;
       });
@@ -223,6 +284,12 @@ export default function BrokersPage() {
           title: 'Broker Connection Notice',
           message: data.message,
           type: 'warning',
+        });
+      } else {
+        await showAlert({
+          title: `${brokerId} Connected Successfully!`,
+          message: data.message || `Successfully connected to ${brokerId}! Live margin: ${data.balanceDisplay || data.balance}`,
+          type: 'success',
         });
       }
     } catch (err: any) {
@@ -243,7 +310,7 @@ export default function BrokersPage() {
   const handleDisconnectBroker = async (brokerId: string) => {
     const confirmed = await showConfirm({
       title: 'Disconnect Broker',
-      message: `Disconnect ${brokerId}? All brokers will be displayed again.`,
+      message: `Disconnect ${brokerId}? Your account credentials will be unlinked.`,
       type: 'warning',
       confirmText: 'Disconnect',
     });
@@ -251,11 +318,27 @@ export default function BrokersPage() {
       return;
     }
 
+    const token = getUserTokenClean();
+    try {
+      await fetch(`/api/brokers/sync?broker=${brokerId}`, {
+        method: 'DELETE',
+        headers: { 'x-access-token': token },
+      });
+    } catch {}
+
     setTestStatus((prev) => {
       const updated = { ...prev };
       delete updated[brokerId];
       try {
-        localStorage.setItem('myalgo_broker_status', JSON.stringify(updated));
+        localStorage.setItem(getStatusStorageKey(), JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    setCredentials((prev) => {
+      const updated = { ...prev, [brokerId]: {} };
+      try {
+        localStorage.setItem(getCredsStorageKey(), JSON.stringify(updated));
       } catch {}
       return updated;
     });
@@ -274,10 +357,14 @@ export default function BrokersPage() {
     }
 
     setFiringOrder(broker.id);
+    const token = getUserTokenClean();
     try {
       const res = await fetch('/api/orders/direct', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-access-token': token,
+        },
         body: JSON.stringify({
           broker: broker.id,
           symbol: symbolToTrade,
@@ -328,7 +415,7 @@ export default function BrokersPage() {
             Broker Integration (Brokers A, B, C)
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Broker A (Delta Crypto), Broker B (Dhan Indian Markets), Broker C (MetaTrader Forex/CFDs).
+            Connect your own private broker credentials. Credentials and balances are strictly isolated per account access code.
           </p>
         </div>
 
@@ -342,11 +429,62 @@ export default function BrokersPage() {
             </button>
           )}
 
-          {/* Live Execution Indicator */}
+          {/* User Account Scope Badge */}
           <div className="flex items-center gap-2 bg-slate-900 px-3.5 py-2 rounded-xl border border-slate-800 shrink-0 self-start sm:self-auto text-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="font-bold text-emerald-400">100% Real Live Money</span>
+            <Key className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-mono text-slate-300 font-semibold">{userToken || 'USER'}</span>
           </div>
+        </div>
+      </div>
+
+      {/* 🌐 SERVER IP WHITELISTING TELEMETRY (For Delta & Dhan Whitelisting) */}
+      <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-cyan-950/20 to-slate-900 border border-slate-800 shadow-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Broker API IP Whitelisting Telemetry</span>
+                <span className="text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/30">
+                  PRIVATE ISOLATED VAULT
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Every trader connects their own API keys. Whitelist the server IP below if your broker enforces IP binding.
+              </p>
+            </div>
+          </div>
+
+          {/* Detected Server IP + 1-Click Copy */}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-slate-200 flex items-center gap-2">
+              <span className="text-slate-500 text-[10px]">Server Public IP:</span>
+              <span className="text-emerald-400 font-bold">{serverIp}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleCopyIp(serverIp)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-xs border border-cyan-500/40 transition-all active:scale-95 shadow"
+            >
+              {copiedIp ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedIp ? 'Copied!' : 'Copy IP'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-850 text-[11px] text-slate-400 space-y-1.5">
+          <div className="text-slate-300 font-semibold flex items-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span>How to setup your API Key IP Whitelist:</span>
+          </div>
+          <p className="pl-5 leading-relaxed">
+            • <strong>Delta Exchange (India / Global):</strong> In Delta Web &gt; API Keys &gt; Permissions, enable <strong>&quot;Read&quot;</strong> and <strong>&quot;Trade&quot;</strong>. In <strong>&quot;Whitelisted IP address&quot;</strong>, paste the server IP <code className="text-emerald-400 font-mono font-bold bg-slate-900 px-1.5 py-0.5 rounded">{serverIp}</code>. (Or you can leave Whitelisted IP blank to allow unrestricted connection).
+          </p>
+          <p className="pl-5 leading-relaxed">
+            • <strong>DhanHQ:</strong> Generate your 24-Hour Access Token from Dhan Web &gt; My Profile &gt; DhanHQ APIs. Enter your 10-digit Client ID and Token.
+          </p>
         </div>
       </div>
 
