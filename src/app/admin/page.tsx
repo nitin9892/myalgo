@@ -263,6 +263,14 @@ export default function AdminPage() {
         setTokens((prev) =>
           prev.map((t) => (t.id === id ? { ...t, is_active: !currentStatus } : t))
         );
+        await showAlert({
+          title: !currentStatus ? 'Access Code Activated' : 'Access Code Paused / Disabled',
+          message: !currentStatus 
+            ? 'Access code is now active.' 
+            : 'Access code has been paused/revoked. Any user on this access code will be automatically logged out within seconds.',
+          type: !currentStatus ? 'success' : 'warning',
+        });
+        fetchTokens(emailToUse);
       }
     } catch (err) {
       console.error(err);

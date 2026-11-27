@@ -31,10 +31,14 @@ import {
   Radio,
   Cpu,
   Layers,
-  Sparkles
+  Sparkles,
+  Sun,
+  Moon,
+  LogOut
 } from 'lucide-react';
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
+import { useTheme } from '@/context/ThemeContext';
 
 function formatDisplayBalance(brokerData: any): string {
   if (!brokerData) return 'Connected (Live)';
@@ -61,6 +65,22 @@ function formatDisplayBalance(brokerData: any): string {
 
 export default function DashboardPage() {
   const { showConfirm, showAlert } = useModal();
+  const { theme, toggleTheme } = useTheme();
+
+  const handleSignOut = async () => {
+    const confirmed = await showConfirm({
+      title: 'Sign Out / Switch Access Code',
+      message: 'Are you sure you want to sign out? You will be prompted to enter an access code to re-open the terminal.',
+      type: 'warning',
+      confirmText: 'Sign Out',
+    });
+    if (!confirmed) return;
+
+    localStorage.removeItem('myalgo_access_token');
+    document.cookie = 'myalgo_access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    window.location.reload();
+  };
+
   const [isRunningCycle, setIsRunningCycle] = useState(false);
   const [cycleResult, setCycleResult] = useState<any>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
@@ -565,20 +585,49 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right: Quick Market Status Feeds */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+        {/* Right: Quick Market Status Feeds & Mode Controls */}
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
             <span className="text-slate-400">CRYPTO:</span>
             <span className="text-emerald-400 font-bold">LIVE 24/7</span>
           </div>
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
-            <span className="text-slate-400">NSE / BSE:</span>
-            <span className="text-cyan-400 font-bold">DHAN v2 READY</span>
+            <span className="text-slate-400">NSE:</span>
+            <span className="text-cyan-400 font-bold">DHAN v2</span>
           </div>
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
             <span className="text-slate-400">SYNC:</span>
             <span className="text-slate-300 font-bold">{lastUpdated || 'Live'}</span>
           </div>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] font-bold text-slate-300 hover:text-white transition-all active:scale-95 shadow-sm"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Light</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden sm:inline">Dark</span>
+              </>
+            )}
+          </button>
+
+          {/* Sign Out Button */}
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-500/15 border border-slate-800 hover:border-rose-500/40 text-[11px] font-bold text-slate-300 hover:text-rose-300 transition-all active:scale-95 shadow-sm"
+            title="Sign Out of Terminal / Switch Access Code"
+          >
+            <LogOut className="w-3.5 h-3.5 text-slate-400" />
+            <span className="hidden sm:inline">Sign Out</span>
+          </button>
         </div>
       </div>
 

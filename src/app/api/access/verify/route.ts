@@ -18,7 +18,10 @@ export async function POST(request: Request) {
       if (!verification.valid) {
         const response = NextResponse.json(
           { success: false, revoked: true, message: verification.message },
-          { status: 401 }
+          { 
+            status: 401,
+            headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+          }
         );
         response.cookies.delete('myalgo_access_token');
         return response;
@@ -31,6 +34,8 @@ export async function POST(request: Request) {
           code: verification.token?.code || cleanCode,
           label: verification.token?.label || 'Trader Access',
         },
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
       });
     }
 

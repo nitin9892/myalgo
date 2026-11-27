@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { AccessGuard } from '@/components/AccessGuard';
-import { Menu, Activity, AlertOctagon } from 'lucide-react';
+import { Menu, Activity, AlertOctagon, Sun, Moon, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
+import { useTheme } from '@/context/ThemeContext';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -14,6 +15,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [killSwitchActive, setKillSwitchActive] = useState(false);
   const isAdminPath = pathname.startsWith('/admin');
   const { showConfirm, showAlert } = useModal();
+  const { theme, toggleTheme } = useTheme();
+
+  const handleSignOut = async () => {
+    const confirmed = await showConfirm({
+      title: 'Sign Out / Switch Access Code',
+      message: 'Are you sure you want to sign out? You will be prompted to enter an access code to re-open the terminal.',
+      type: 'warning',
+      confirmText: 'Sign Out',
+    });
+    if (!confirmed) return;
+
+    localStorage.removeItem('myalgo_access_token');
+    document.cookie = 'myalgo_access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    window.location.reload();
+  };
 
   useEffect(() => {
     const checkKill = () => {
@@ -87,16 +103,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {killSwitchActive && (
               <button
                 onClick={handleResetKillSwitch}
                 className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-500 text-white flex items-center gap-1 animate-pulse shadow"
               >
                 <AlertOctagon className="w-3 h-3 text-white" />
-                KILL SWITCH (DISARM)
+                KILL SWITCH
               </button>
             )}
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-xl bg-slate-800/80 text-slate-300 hover:text-white"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-cyan-400" />}
+            </button>
+
+            {/* Sign Out Button */}
+            <button
+              onClick={handleSignOut}
+              className="p-2 rounded-xl bg-slate-800/80 text-slate-300 hover:text-rose-400"
+              title="Sign Out / Switch Access Code"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
 
             <button
               onClick={() => setMobileMenuOpen(true)}

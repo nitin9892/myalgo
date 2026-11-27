@@ -14,9 +14,13 @@ import {
   ShieldAlert,
   X,
   AlertOctagon,
-  PlayCircle
+  PlayCircle,
+  Sun,
+  Moon,
+  LogOut
 } from 'lucide-react';
 import { useModal } from '@/context/ModalContext';
+import { useTheme } from '@/context/ThemeContext';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -34,6 +38,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [killSwitchActive, setKillSwitchActive] = useState(false);
   const { showConfirm, showAlert } = useModal();
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const checkKill = () => {
@@ -56,6 +61,20 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       clearInterval(interval);
     };
   }, []);
+
+  const handleSignOut = async () => {
+    const confirmed = await showConfirm({
+      title: 'Sign Out / Switch Access Code',
+      message: 'Are you sure you want to sign out? You will be prompted to enter an access code to re-open the terminal.',
+      type: 'warning',
+      confirmText: 'Sign Out',
+    });
+    if (!confirmed) return;
+
+    localStorage.removeItem('myalgo_access_token');
+    document.cookie = 'myalgo_access_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    window.location.reload();
+  };
 
   const handleLockTerminal = () => {
     localStorage.removeItem('myalgo_access_token');
@@ -172,22 +191,56 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </nav>
       </div>
 
-      {/* Footer Controls & Emergency Kill Switch Shifted Here */}
-      <div className="pt-4 border-t border-slate-800 text-xs text-slate-500 space-y-3 px-2">
-        <div className="flex items-center justify-between text-slate-400">
+      {/* Footer Controls, Theme Toggle & Sign Out */}
+      <div className="pt-4 border-t border-slate-800 text-xs text-slate-500 space-y-2.5 px-1">
+        {/* Theme Switcher Button */}
+        <button
+          onClick={toggleTheme}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950/80 hover:bg-slate-800/80 text-slate-300 hover:text-white border border-slate-800 transition-all text-xs font-semibold"
+          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          <div className="flex items-center gap-2">
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-cyan-400" />
+            )}
+            <span>{theme === 'dark' ? 'Light Theme' : 'Dark Theme'}</span>
+          </div>
+          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 font-bold">
+            {theme}
+          </span>
+        </button>
+
+        {/* Sign Out Button (Switch Access Code) */}
+        <button
+          onClick={handleSignOut}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-950/80 hover:bg-rose-500/15 text-slate-300 hover:text-rose-300 border border-slate-800 hover:border-rose-500/30 transition-all text-xs font-semibold group"
+          title="Sign out of current access code"
+        >
+          <div className="flex items-center gap-2">
+            <LogOut className="w-4 h-4 text-slate-400 group-hover:text-rose-400 transition-colors" />
+            <span>Sign Out</span>
+          </div>
+          <span className="text-[10px] text-slate-500 group-hover:text-rose-400 font-mono transition-colors">
+            Switch Code &rarr;
+          </span>
+        </button>
+
+        <div className="flex items-center justify-between text-slate-400 pt-1">
           <Link 
             href="/admin" 
             onClick={onClose}
-            className="flex items-center gap-1.5 text-cyan-400 hover:underline font-semibold py-1"
+            className="flex items-center gap-1.5 text-cyan-400 hover:underline font-semibold py-0.5 text-[11px]"
           >
-            <ShieldCheck className="w-4 h-4" /> Admin Portal
+            <ShieldCheck className="w-3.5 h-3.5" /> Admin Portal
           </Link>
           <button
             onClick={handleLockTerminal}
-            className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors font-medium py-1"
+            className="flex items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors font-medium py-0.5 text-[11px]"
             title="Lock Terminal"
           >
-            <Lock className="w-3.5 h-3.5" /> Lock
+            <Lock className="w-3 h-3" /> Lock
           </button>
         </div>
 

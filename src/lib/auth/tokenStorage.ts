@@ -1,4 +1,6 @@
 import { getAdminSupabase } from '@/lib/supabase';
+import fs from 'fs';
+import path from 'path';
 
 export interface AccessToken {
   id: string;
@@ -48,8 +50,47 @@ export const MASTER_FALLBACK_TOKENS: AccessToken[] = [
   },
 ];
 
+const DATA_DIR = path.join(process.cwd(), 'data');
+const TOKENS_FILE = path.join(DATA_DIR, 'access_tokens.json');
+
+function ensureDataDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch {}
+}
+
+function loadTokensFromFile(): Map<string, AccessToken> {
+  const map = new Map<string, AccessToken>();
+  ensureDataDir();
+  try {
+    if (fs.existsSync(TOKENS_FILE)) {
+      const content = fs.readFileSync(TOKENS_FILE, 'utf8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        for (const t of parsed) {
+          if (t && t.code) {
+            map.set(String(t.code).toUpperCase(), t);
+          }
+        }
+      }
+    }
+  } catch {}
+  return map;
+}
+
+function saveTokensToFile(tokens: AccessToken[]) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to write tokens to local file:', e);
+  }
+}
+
 /**
- * Fetch all access tokens from Supabase (checking both access_tokens table and system_logs fallback)
+ * Fetch all access tokens from local disk + Supabase (checking access_tokens table & system_logs)
  */
 export async function getAllAccessTokens(): Promise<AccessToken[]> {
   const supabase = getAdminSupabase();
@@ -57,10 +98,16 @@ export async function getAllAccessTokens(): Promise<AccessToken[]> {
 
   // 1. Seed master fallback tokens
   for (const t of MASTER_FALLBACK_TOKENS) {
-    tokenMap.set(t.code, t);
+    tokenMap.set(t.code, { ...t });
   }
 
-  // 2. Try fetching from dedicated access_tokens table
+  // 2. Load from local JSON store
+  const localTokens = loadTokensFromFile();
+  localTokens.forEach((t, code) => {
+    tokenMap.set(code, t);
+  });
+
+  // 3. Try fetching from dedicated access_tokens table in Supabase
   try {
     const { data, error } = await supabase
       .from('access_tokens')
@@ -70,23 +117,25 @@ export async function getAllAccessTokens(): Promise<AccessToken[]> {
     if (!error && Array.isArray(data)) {
       for (const row of data) {
         if (row && row.code) {
-          tokenMap.set(row.code.toUpperCase(), {
-            id: row.id,
-            code: row.code.toUpperCase(),
-            label: row.label || 'Trader Access',
-            is_active: row.is_active ?? true,
-            max_uses: row.max_uses ?? 10,
-            used_count: row.used_count ?? 0,
-            expires_at: row.expires_at || null,
-            created_at: row.created_at || new Date().toISOString(),
-            created_by: row.created_by || 'ADMIN',
+          const code = String(row.code).toUpperCase();
+          const existing = tokenMap.get(code);
+          tokenMap.set(code, {
+            id: row.id || existing?.id || `tok-${code}`,
+            code: code,
+            label: row.label || existing?.label || 'Trader Access',
+            is_active: row.is_active ?? existing?.is_active ?? true,
+            max_uses: row.max_uses ?? existing?.max_uses ?? 10,
+            used_count: Math.max(row.used_count ?? 0, existing?.used_count ?? 0),
+            expires_at: row.expires_at || existing?.expires_at || null,
+            created_at: row.created_at || existing?.created_at || new Date().toISOString(),
+            created_by: row.created_by || existing?.created_by || 'ADMIN',
           });
         }
       }
     }
   } catch {}
 
-  // 3. Fetch from system_logs (persistent fallback when access_tokens table is not yet migrated in Supabase)
+  // 4. Fetch from system_logs (persistent fallback when access_tokens table is not yet migrated in Supabase)
   try {
     const { data: logs, error: logErr } = await supabase
       .from('system_logs')
@@ -99,16 +148,19 @@ export async function getAllAccessTokens(): Promise<AccessToken[]> {
         if (row.metadata && row.metadata.code) {
           const m = row.metadata;
           const code = String(m.code).toUpperCase();
+          const existing = tokenMap.get(code);
+
+          // If this log event explicitly toggled is_active, respect it
           tokenMap.set(code, {
-            id: m.id || row.id,
+            id: m.id || existing?.id || row.id,
             code: code,
-            label: m.label || 'Trader Access',
-            is_active: m.is_active !== undefined ? m.is_active : true,
-            max_uses: m.max_uses ?? 10,
-            used_count: m.used_count ?? 0,
-            expires_at: m.expires_at || null,
-            created_at: m.created_at || row.timestamp,
-            created_by: m.created_by || 'ADMIN',
+            label: m.label || existing?.label || 'Trader Access',
+            is_active: m.is_active !== undefined ? m.is_active : (existing?.is_active ?? true),
+            max_uses: m.max_uses ?? existing?.max_uses ?? 10,
+            used_count: Math.max(m.used_count ?? 0, existing?.used_count ?? 0),
+            expires_at: m.expires_at || existing?.expires_at || null,
+            created_at: m.created_at || existing?.created_at || row.timestamp,
+            created_by: m.created_by || existing?.created_by || 'ADMIN',
           });
         }
       }
@@ -117,10 +169,22 @@ export async function getAllAccessTokens(): Promise<AccessToken[]> {
     console.error('Failed to query tokens from system_logs:', err);
   }
 
-  // Convert map to array and sort by created_at descending
-  return Array.from(tokenMap.values()).sort(
+  // 5. Re-apply local overrides from disk in case local was updated right now
+  localTokens.forEach((t, code) => {
+    const existing = tokenMap.get(code);
+    if (existing) {
+      existing.is_active = t.is_active; // Local active/pause status always respected
+    }
+  });
+
+  const allTokens = Array.from(tokenMap.values()).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
+
+  // Sync to local disk cache
+  saveTokensToFile(allTokens);
+
+  return allTokens;
 }
 
 /**
@@ -154,62 +218,36 @@ export async function createAccessToken(
     created_by: created_by || 'ADMIN',
   };
 
+  // 1. Immediately persist locally
+  const currentTokens = await getAllAccessTokens();
+  const filtered = currentTokens.filter(t => t.code !== cleanCode);
+  filtered.unshift(tokenObj);
+  saveTokensToFile(filtered);
+
+  // 2. Persist in Supabase
   const supabase = getAdminSupabase();
 
-  // 1. Attempt to insert in access_tokens table
   try {
-    const { data, error } = await supabase
-      .from('access_tokens')
-      .insert({
-        code: tokenObj.code,
-        label: tokenObj.label,
-        max_uses: tokenObj.max_uses,
-        expires_at: tokenObj.expires_at,
-        is_active: true,
-        created_by: tokenObj.created_by,
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      return {
-        success: true,
-        token: {
-          id: data.id,
-          code: data.code,
-          label: data.label,
-          is_active: data.is_active,
-          max_uses: data.max_uses,
-          used_count: data.used_count || 0,
-          expires_at: data.expires_at,
-          created_at: data.created_at,
-          created_by: data.created_by,
-        },
-      };
-    }
+    await supabase.from('access_tokens').insert({
+      code: tokenObj.code,
+      label: tokenObj.label,
+      max_uses: tokenObj.max_uses,
+      expires_at: tokenObj.expires_at,
+      is_active: true,
+      created_by: tokenObj.created_by,
+    });
   } catch {}
 
-  // 2. Persistent fallback to system_logs (guaranteed to work in current Supabase setup)
   try {
-    const { data: logData, error: logErr } = await supabase
-      .from('system_logs')
-      .insert({
-        level: 'INFO',
-        source: 'ACCESS_TOKEN',
-        message: `Generated Access Code: ${tokenObj.code} [${tokenObj.label}]`,
-        metadata: tokenObj,
-      })
-      .select()
-      .single();
+    await supabase.from('system_logs').insert({
+      level: 'INFO',
+      source: 'ACCESS_TOKEN',
+      message: `Generated Access Code: ${tokenObj.code} [${tokenObj.label}]`,
+      metadata: tokenObj,
+    });
+  } catch {}
 
-    if (logErr) {
-      return { success: false, error: logErr.message };
-    }
-
-    return { success: true, token: tokenObj };
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
+  return { success: true, token: tokenObj };
 }
 
 /**
@@ -219,37 +257,42 @@ export async function updateAccessTokenStatus(
   idOrCode: string,
   is_active: boolean
 ): Promise<{ success: boolean; error?: string }> {
+  const targetCode = idOrCode.toUpperCase().trim();
   const supabase = getAdminSupabase();
   const tokens = await getAllAccessTokens();
-  const target = tokens.find(t => t.id === idOrCode || t.code === idOrCode.toUpperCase());
+  const target = tokens.find(t => t.id === idOrCode || t.code === targetCode);
 
   if (!target) {
     return { success: false, error: 'Token not found' };
   }
 
-  // 1. Try updating in access_tokens table
+  target.is_active = is_active;
+
+  // 1. Instantly update local disk file
+  saveTokensToFile(tokens);
+
+  // 2. Try updating in access_tokens table
   try {
-    const { error } = await supabase
+    await supabase
       .from('access_tokens')
       .update({ is_active })
       .or(`id.eq.${target.id},code.eq.${target.code}`);
-
-    if (!error) return { success: true };
   } catch {}
 
-  // 2. Fallback to system_logs
+  // 3. ALWAYS insert into system_logs to guarantee global persistence across instances
   try {
-    const updated = { ...target, is_active };
+    const updated = { ...target, is_active, updated_at: new Date().toISOString() };
     await supabase.from('system_logs').insert({
       level: is_active ? 'INFO' : 'WARN',
       source: 'ACCESS_TOKEN',
-      message: `${is_active ? 'Re-activated' : 'Revoked'} Access Code: ${target.code}`,
+      message: `${is_active ? 'Re-activated' : 'Revoked/Paused'} Access Code: ${target.code}`,
       metadata: updated,
     });
-    return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    console.error('Failed to log token update:', err);
   }
+
+  return { success: true };
 }
 
 /**
@@ -271,7 +314,7 @@ export async function verifyAccessTokenStatusOnly(
   }
 
   if (!token.is_active) {
-    return { valid: false, message: 'This access code has been revoked by the administrator.' };
+    return { valid: false, message: 'This access code has been disabled or paused by the administrator.' };
   }
 
   if (token.expires_at && new Date(token.expires_at).getTime() < Date.now()) {
@@ -304,7 +347,7 @@ export async function verifyAndConsumeAccessToken(
   }
 
   if (!token.is_active) {
-    return { valid: false, message: 'This access code has been revoked by admin.' };
+    return { valid: false, message: 'This access code has been disabled or paused by the administrator.' };
   }
 
   if (token.expires_at && new Date(token.expires_at).getTime() < Date.now()) {
@@ -318,6 +361,10 @@ export async function verifyAndConsumeAccessToken(
   // Increment usage count
   const supabase = getAdminSupabase();
   const newCount = (token.used_count || 0) + 1;
+  token.used_count = newCount;
+
+  // Update local file
+  saveTokensToFile(tokens);
 
   // Try updating in access_tokens table
   try {
