@@ -1,5 +1,6 @@
 import { Candle } from '../brokers/types';
 import { ActivePositionState, StrategyEvaluationResult } from './prev_day_breakout';
+import { calculateDynamicTrailingSL } from './trailing';
 
 /**
  * ----------------------------------------------------------------------------
@@ -378,41 +379,26 @@ export function evaluatePhantomICTStrategy(
       };
     }
 
-    // 1.3 ADAPTIVE TRAILING & BREAKEVEN MANAGEMENT
+    // 1.3 UNIVERSAL DYNAMIC TRAILING: Every +100% market move (1R) trails SL by +35% (0.35R)
+    const favorablePrice = isBuy ? latestCandle.high : latestCandle.low;
+    const trailingRes = calculateDynamicTrailingSL(isBuy, entry, initialSl, currentSl, favorablePrice);
+
+    if (trailingRes.shouldTrail) {
+      return {
+        canEnterNewTrade: false,
+        isForceSquareOff: false,
+        signal: null,
+        trailingUpdate: {
+          newSl: trailingRes.newSl,
+          newTarget: target,
+          milestone: trailingRes.milestone,
+          pointsTrailed: trailingRes.pointsTrailed,
+        },
+      };
+    }
+
     const currentProfitPoints = isBuy ? currentPrice - entry : entry - currentPrice;
     const currentRR = riskPoints > 0 ? currentProfitPoints / riskPoints : 0;
-
-    // Trigger Breakeven at 1:1.5 RR
-    if (currentRR >= beTriggerRR && currentSl === initialSl) {
-      const bePrice = isBuy ? entry + riskPoints * 0.05 : entry - riskPoints * 0.05;
-      return {
-        canEnterNewTrade: false,
-        isForceSquareOff: false,
-        signal: null,
-        trailingUpdate: {
-          newSl: Number(bePrice.toFixed(2)),
-          newTarget: target,
-          milestone: 1,
-          pointsTrailed: Math.abs(bePrice - initialSl),
-        },
-      };
-    }
-
-    // Trigger Profit Lock Trailing at 1:2.5 RR -> Trail to +1.5 RR
-    if (currentRR >= trailTriggerRR && Math.abs(currentSl - entry) < riskPoints * 0.5) {
-      const lockedSl = isBuy ? entry + riskPoints * 1.5 : entry - riskPoints * 1.5;
-      return {
-        canEnterNewTrade: false,
-        isForceSquareOff: false,
-        signal: null,
-        trailingUpdate: {
-          newSl: Number(lockedSl.toFixed(2)),
-          newTarget: target,
-          milestone: 2,
-          pointsTrailed: Math.abs(lockedSl - initialSl),
-        },
-      };
-    }
 
     return {
       canEnterNewTrade: false,

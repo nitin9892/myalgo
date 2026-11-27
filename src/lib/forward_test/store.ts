@@ -19,6 +19,7 @@ export interface ForwardPosition {
   entryPrice: number;
   currentPrice: number;
   stopLoss: number;
+  initialStopLoss?: number;
   takeProfit: number;
   unrealizedPnl: number;
   unrealizedPnlPct: number;
@@ -48,6 +49,7 @@ export interface ForwardTestConfig {
   isRunning: boolean;
   strategy: 'Strategy C' | 'Strategy B' | 'Strategy A';
   symbols: string[];
+  timeframe?: string;
   perTradeRiskPct: number;
   overallRiskPct: number;
   leverage: number;
@@ -102,6 +104,7 @@ const DEFAULT_STATE: ForwardTestState = {
     isRunning: true,
     strategy: 'Strategy B',
     symbols: ['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'],
+    timeframe: '5m',
     perTradeRiskPct: 2,
     overallRiskPct: 10,
     leverage: 5,

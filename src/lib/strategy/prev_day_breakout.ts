@@ -1,4 +1,5 @@
 import { Candle } from '../brokers/types';
+import { calculateDynamicTrailingSL } from './trailing';
 
 export interface KeyLevels {
   prevHigh: number;
@@ -186,6 +187,7 @@ export function evaluatePrevDayBreakout(
     const {
       side,
       entryPrice,
+      initialSlPrice = activePosition.currentSlPrice,
       currentSlPrice,
       currentTargetPrice,
       trailingMilestones = 0,
@@ -214,20 +216,16 @@ export function evaluatePrevDayBreakout(
         return result;
       }
 
-      // Step Trailing: for every +10 pts favorable move -> trail +3 pts
-      const favorablePts = livePrice - entryPrice;
-      if (favorablePts > 0) {
-        const milestones = Math.floor(favorablePts / trailStep);
-        if (milestones > trailingMilestones) {
-          const milestoneDiff = milestones - trailingMilestones;
-          const shiftPts = milestoneDiff * trailAmount;
-          result.trailingUpdate = {
-            newSl: currentSlPrice + shiftPts,
-            newTarget: currentTargetPrice + shiftPts,
-            milestone: milestones,
-            pointsTrailed: shiftPts,
-          };
-        }
+      // Universal Dynamic Trailing: For every +100% move (1R), trail SL by +35% (0.35R)
+      const favorablePrice = lastCandle ? lastCandle.high : livePrice;
+      const trailingRes = calculateDynamicTrailingSL(true, entryPrice, initialSlPrice, currentSlPrice, favorablePrice);
+      if (trailingRes.shouldTrail) {
+        result.trailingUpdate = {
+          newSl: trailingRes.newSl,
+          newTarget: currentTargetPrice,
+          milestone: trailingRes.milestone,
+          pointsTrailed: trailingRes.pointsTrailed,
+        };
       }
     } else if (side === 'SELL') {
       // Check SL hit
@@ -249,20 +247,16 @@ export function evaluatePrevDayBreakout(
         return result;
       }
 
-      // Step Trailing for Short: for every +10 pts favorable fall -> trail +3 pts
-      const favorablePts = entryPrice - livePrice;
-      if (favorablePts > 0) {
-        const milestones = Math.floor(favorablePts / trailStep);
-        if (milestones > trailingMilestones) {
-          const milestoneDiff = milestones - trailingMilestones;
-          const shiftPts = milestoneDiff * trailAmount;
-          result.trailingUpdate = {
-            newSl: currentSlPrice - shiftPts,
-            newTarget: currentTargetPrice - shiftPts,
-            milestone: milestones,
-            pointsTrailed: shiftPts,
-          };
-        }
+      // Universal Dynamic Trailing: For every +100% fall (1R), trail SL down by +35% (0.35R)
+      const favorablePrice = lastCandle ? lastCandle.low : livePrice;
+      const trailingRes = calculateDynamicTrailingSL(false, entryPrice, initialSlPrice, currentSlPrice, favorablePrice);
+      if (trailingRes.shouldTrail) {
+        result.trailingUpdate = {
+          newSl: trailingRes.newSl,
+          newTarget: currentTargetPrice,
+          milestone: trailingRes.milestone,
+          pointsTrailed: trailingRes.pointsTrailed,
+        };
       }
     }
 

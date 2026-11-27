@@ -47,22 +47,26 @@ export async function POST(request: Request) {
       maxOpenTrades: 2,
     });
 
+    const selectedTimeframe = body.timeframe || body.parameters?.timeframe || '5m';
+
     const strategyRecord = {
       id: body.id || 'master-strategy-active',
       name: strategyName,
       broker_name: body.broker_name || 'DELTA',
       symbol: symbol,
-      timeframe: '5m',
+      timeframe: selectedTimeframe,
       strategy_type: 'CUSTOM_ALGO',
       is_active: body.is_active ?? true,
       paper_trading: false,
       parameters: {
         symbols: symbolsArray,
+        timeframe: selectedTimeframe,
         daily_loss_pct: dailyLossPct,
         per_trade_risk_pct: perTradeRiskPct,
         max_trades_per_day: maxTradesPerDay,
         leverage_mode: leverageMode,
         leverage: leverage,
+        trailing_rule: '35% SL trail per 100% favorable move',
         ...(body.params || {}),
       },
       updated_at: new Date().toISOString(),

@@ -117,6 +117,7 @@ export default function DashboardPage() {
   // 4-Step Launch & Workflow Wizard State
   const [selectedBroker, setSelectedBroker] = useState<'DELTA' | 'DHAN' | 'METATRADER'>('DELTA');
   const [selectedStrategy, setSelectedStrategy] = useState<'Strategy B' | 'Strategy C' | 'Strategy A'>('Strategy B');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<'1m' | '3m' | '5m' | '15m' | '1h'>('5m');
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(['BTC', 'ETH', 'SOL', 'XRP']);
   const [allocatedCapital, setAllocatedCapital] = useState<number>(100000);
   const [riskPerTrade, setRiskPerTrade] = useState<number>(2);
@@ -511,6 +512,7 @@ export default function DashboardPage() {
           name: selectedStrategy,
           broker_name: selectedBroker,
           symbols: selectedSymbols.map((s) => (selectedBroker === 'DELTA' ? `${s}USD` : s)),
+          timeframe: selectedTimeframe,
           risk_reward_ratio: selectedStrategy === 'Strategy B' ? 4 : 3,
           max_trades_per_day: maxTradesDay,
           is_active: true,
@@ -522,7 +524,7 @@ export default function DashboardPage() {
 
       await showAlert({
         title: 'Algo Successfully Launched! 🚀',
-        message: `Algo engine is now LIVE and actively scanning ${selectedSymbols.join(', ')} with ${selectedStrategy} on ${selectedBroker}.\nRisk: ${riskPerTrade}% per trade • Leverage: ${selectedLeverage}x • Max Trades: ${maxTradesDay}/day.`,
+        message: `Algo engine is now LIVE and actively scanning ${selectedSymbols.join(', ')} on ${selectedTimeframe} candles with ${selectedStrategy} on ${selectedBroker}.\nRisk: ${riskPerTrade}% per trade • Leverage: ${selectedLeverage}x • Trailing SL: 35% per 100% market move • Max Trades: ${maxTradesDay}/day.`,
         type: 'success',
       });
     } catch (err: any) {
@@ -972,6 +974,44 @@ export default function DashboardPage() {
                 })}
               </div>
             </div>
+
+            {/* Trading Timeframe Selection */}
+            <div className="pt-2 border-t border-slate-900 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Strategy Timeframe:</span>
+                <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                  {selectedTimeframe === '5m' ? '5m (Standard SMC)' : selectedTimeframe}
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[
+                  { id: '1m', label: '1m', desc: 'Ultra Scalp' },
+                  { id: '3m', label: '3m', desc: 'Micro Trend' },
+                  { id: '5m', label: '5m', desc: 'Recommended', isRecommended: true },
+                  { id: '15m', label: '15m', desc: 'Structure' },
+                  { id: '1h', label: '1h', desc: 'HTF Trend' },
+                ].map((tf) => {
+                  const isSel = selectedTimeframe === tf.id;
+                  return (
+                    <button
+                      key={tf.id}
+                      type="button"
+                      onClick={() => setSelectedTimeframe(tf.id as any)}
+                      className={`p-1.5 rounded-lg text-center border transition-all ${
+                        isSel
+                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 font-bold shadow-sm'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
+                      }`}
+                    >
+                      <div className="text-xs font-mono font-bold">{tf.label}</div>
+                      <div className={`text-[8px] truncate ${tf.isRecommended ? 'text-emerald-400 font-semibold' : 'text-slate-500'}`}>
+                        {tf.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/* STEP 3: Risk Parameters & Guardrails */}
@@ -1034,6 +1074,16 @@ export default function DashboardPage() {
                 -{maxDrawdownPct}% Hard Stop
               </span>
             </div>
+
+            <div className="pt-2 border-t border-slate-900/60 flex items-center justify-between text-xs">
+              <span className="text-slate-400 text-[11px] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Dynamic Trailing Rule:
+              </span>
+              <span className="font-mono font-bold text-[10px] text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                ⚡ +35% SL trail per 100% favorable move
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1053,7 +1103,7 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-1">
-                    Live Model: <strong className="text-emerald-400">{selectedStrategy}</strong> on <strong className="text-cyan-400">{selectedBroker}</strong> [{selectedSymbols.join(', ')}] • {riskPerTrade}% risk/trade • Max {maxTradesDay} trades/day.
+                    Live Model: <strong className="text-emerald-400">{selectedStrategy}</strong> ({selectedTimeframe}) on <strong className="text-cyan-400">{selectedBroker}</strong> [{selectedSymbols.join(', ')}] • {riskPerTrade}% risk/trade • 35% Trailing SL @ 100% move • Max {maxTradesDay} trades/day.
                   </p>
                 </div>
               </div>

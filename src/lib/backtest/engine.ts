@@ -1,5 +1,6 @@
 import { Candle } from '../brokers/types';
 import { evaluatePhantomICTStrategy } from '../strategy/phantom_ict';
+import { calculateDynamicTrailingSL } from '../strategy/trailing';
 
 export interface BacktestParams {
   strategy?: string;
@@ -23,6 +24,7 @@ export interface BacktestTrade {
   entryPrice: number;
   exitPrice: number;
   stopLoss: number;
+  initialStopLoss?: number;
   takeProfit: number;
   quantity: number;
   pnl: number;
@@ -349,22 +351,20 @@ export async function runRealMarketBacktest(params: BacktestParams): Promise<Bac
         }
       }
 
-      // Trailing SL check if enabled
+      // Universal Dynamic Trailing: Every +100% market move (1R) trails SL by +35% (0.35R)
       if (exitPrice === null && params.trailingEnabled) {
-        const favorablePoints = isBuy
-          ? candle.high - (activeTrade.entryPrice || 0)
-          : (activeTrade.entryPrice || 0) - candle.low;
+        const initSl = activeTrade.initialStopLoss || activeTrade.stopLoss || 0;
+        const favorablePrice = isBuy ? candle.high : candle.low;
+        const trailingRes = calculateDynamicTrailingSL(
+          isBuy,
+          activeTrade.entryPrice || 0,
+          initSl,
+          activeTrade.stopLoss || 0,
+          favorablePrice
+        );
 
-        if (favorablePoints >= 10) {
-          const trailSteps = Math.floor(favorablePoints / 10);
-          const pointsToTrail = trailSteps * 3;
-          if (isBuy) {
-            const trailedSl = (activeTrade.stopLoss || 0) + pointsToTrail;
-            if (trailedSl > (activeTrade.stopLoss || 0)) activeTrade.stopLoss = trailedSl;
-          } else {
-            const trailedSl = (activeTrade.stopLoss || 0) - pointsToTrail;
-            if (trailedSl < (activeTrade.stopLoss || 0)) activeTrade.stopLoss = trailedSl;
-          }
+        if (trailingRes.shouldTrail) {
+          activeTrade.stopLoss = trailingRes.newSl;
         }
       }
 
@@ -447,6 +447,7 @@ export async function runRealMarketBacktest(params: BacktestParams): Promise<Bac
             side: triggerSide,
             entryPrice: triggerPrice,
             stopLoss: slPrice,
+            initialStopLoss: slPrice,
             takeProfit: tpPrice,
             quantity,
           };
@@ -527,6 +528,7 @@ export async function runRealMarketBacktest(params: BacktestParams): Promise<Bac
           side: triggerSide,
           entryPrice: triggerPrice,
           stopLoss: slPrice,
+          initialStopLoss: slPrice,
           takeProfit: tpPrice,
           quantity,
         };

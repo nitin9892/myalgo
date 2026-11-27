@@ -105,6 +105,7 @@ export async function POST(request: Request) {
         const capital = Math.max(100, Number(body.startingCapital || state.wallet.startingBalance || 10000));
         const riskPct = Math.min(10, Math.max(0.25, Number(body.perTradeRiskPct || state.config.perTradeRiskPct || 2)));
         const overallRiskPct = Math.min(50, Math.max(1, Number(body.overallRiskPct || state.config.overallRiskPct || 10)));
+        if (body.timeframe) state.config.timeframe = body.timeframe;
 
         state = await runOneDayRealtimeReplay(strategy, symbols, capital, riskPct, userId, overallRiskPct);
         break;
@@ -129,6 +130,7 @@ export async function POST(request: Request) {
         if (body.symbols && Array.isArray(body.symbols) && body.symbols.length > 0) {
           state.config.symbols = body.symbols;
         }
+        if (body.timeframe) state.config.timeframe = body.timeframe;
         if (body.perTradeRiskPct) state.config.perTradeRiskPct = Number(body.perTradeRiskPct);
         if (body.overallRiskPct) state.config.overallRiskPct = Number(body.overallRiskPct);
         if (body.leverage) {

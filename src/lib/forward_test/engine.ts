@@ -2,6 +2,7 @@ import { Candle } from '../brokers/types';
 import { fetchRealHistoricalCandles } from '../backtest/engine';
 import { evaluatePhantomICTStrategy } from '../strategy/phantom_ict';
 import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrategyParams } from '../strategy/prev_day_breakout';
+import { calculateDynamicTrailingSL } from '../strategy/trailing';
 import { 
   loadForwardTestState, 
   saveForwardTestState, 
@@ -93,13 +94,14 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
           }
         }
 
-        // Trailing SL check (Breakeven at 1:1.5 RR)
-        const riskPoints = Math.abs(existingPos.entryPrice - existingPos.stopLoss);
-        if (!shouldClose && riskPoints > 0) {
-          const favorablePoints = isBuy ? latestCandle.high - existingPos.entryPrice : existingPos.entryPrice - latestCandle.low;
-          if (favorablePoints >= riskPoints * 1.5 && (!existingPos.trailingMilestone || existingPos.trailingMilestone < 1)) {
-            existingPos.stopLoss = isBuy ? existingPos.entryPrice + riskPoints * 0.1 : existingPos.entryPrice - riskPoints * 0.1;
-            existingPos.trailingMilestone = 1;
+        // Universal Dynamic Trailing: Every +100% market move (1R) trails SL by +35% (0.35R)
+        if (!shouldClose) {
+          const initSl = existingPos.initialStopLoss || existingPos.stopLoss;
+          const favorablePrice = isBuy ? latestCandle.high : latestCandle.low;
+          const trailingRes = calculateDynamicTrailingSL(isBuy, existingPos.entryPrice, initSl, existingPos.stopLoss, favorablePrice);
+          if (trailingRes.shouldTrail) {
+            existingPos.stopLoss = trailingRes.newSl;
+            existingPos.trailingMilestone = trailingRes.milestone;
           }
         }
 
@@ -204,6 +206,7 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
               entryPrice: currentPrice,
               currentPrice,
               stopLoss,
+              initialStopLoss: stopLoss,
               takeProfit,
               unrealizedPnl: 0,
               unrealizedPnlPct: 0,
@@ -340,6 +343,15 @@ export async function runOneDayRealtimeReplay(
             state.wallet.realizedPnl = Number((state.wallet.realizedPnl + finalPnl).toFixed(2));
             inTrade = false;
             activePos = null;
+          } else {
+            // Universal Dynamic Trailing: Every +100% market move (1R) trails SL by +35% (0.35R)
+            const initSl = activePos.initialStopLoss || activePos.stopLoss;
+            const favPrice = isBuy ? c.high : c.low;
+            const trailRes = calculateDynamicTrailingSL(isBuy, activePos.entryPrice, initSl, activePos.stopLoss, favPrice);
+            if (trailRes.shouldTrail) {
+              activePos.stopLoss = trailRes.newSl;
+              activePos.trailingMilestone = trailRes.milestone;
+            }
           }
           continue;
         }
@@ -367,6 +379,7 @@ export async function runOneDayRealtimeReplay(
                 entryPrice: c.close,
                 currentPrice: c.close,
                 stopLoss: evalRes.stopLoss,
+                initialStopLoss: evalRes.stopLoss,
                 takeProfit: evalRes.target,
                 unrealizedPnl: 0,
                 unrealizedPnlPct: 0,
@@ -398,6 +411,7 @@ export async function runOneDayRealtimeReplay(
                 entryPrice: c.close,
                 currentPrice: c.close,
                 stopLoss: sl,
+                initialStopLoss: sl,
                 takeProfit: c.close + 3 * slDist,
                 unrealizedPnl: 0,
                 unrealizedPnlPct: 0,
@@ -423,6 +437,7 @@ export async function runOneDayRealtimeReplay(
                 entryPrice: c.close,
                 currentPrice: c.close,
                 stopLoss: sl,
+                initialStopLoss: sl,
                 takeProfit: c.close - 3 * slDist,
                 unrealizedPnl: 0,
                 unrealizedPnlPct: 0,

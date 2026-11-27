@@ -39,6 +39,8 @@ interface ForwardPosition {
   entryPrice: number;
   currentPrice: number;
   stopLoss: number;
+  initialStopLoss?: number;
+  trailingMilestone?: number;
   takeProfit: number;
   unrealizedPnl: number;
   unrealizedPnlPct: number;
@@ -75,6 +77,7 @@ interface ForwardState {
     isRunning: boolean;
     strategy: 'Strategy C' | 'Strategy B' | 'Strategy A';
     symbols: string[];
+    timeframe?: string;
     perTradeRiskPct: number;
     overallRiskPct?: number;
     leverage: number;
@@ -86,6 +89,14 @@ interface ForwardState {
   closedTrades: ForwardClosedTrade[];
   lastUpdated: string;
 }
+
+const AVAILABLE_TIMEFRAMES = [
+  { id: '1m', label: '1m', desc: '1-Min Scalp' },
+  { id: '3m', label: '3m', desc: '3-Min Momentum' },
+  { id: '5m', label: '5m', desc: '5-Min Standard', isRecommended: true },
+  { id: '15m', label: '15m', desc: '15-Min Swing' },
+  { id: '1h', label: '1h', desc: '1-Hour Macro' },
+];
 
 const AVAILABLE_INSTRUMENTS = [
   { id: 'BTCUSD', name: 'Bitcoin', tag: 'BTC / USD' },
@@ -104,6 +115,7 @@ export default function ForwardTestingPage() {
 
   // Configuration Form State (Default 10,000 Virtual Balance as requested)
   const [selectedStrategy, setSelectedStrategy] = useState<'Strategy B' | 'Strategy C' | 'Strategy A'>('Strategy B');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD']);
   const [capitalInput, setCapitalInput] = useState<number>(10000);
   const [riskPct, setRiskPct] = useState<number>(2);
@@ -148,6 +160,7 @@ export default function ForwardTestingPage() {
         setStats(json.stats);
         if (json.state.config) {
           setSelectedStrategy(json.state.config.strategy || 'Strategy B');
+          if (json.state.config.timeframe) setSelectedTimeframe(json.state.config.timeframe);
           if (json.state.config.symbols?.length) setSelectedSymbols(json.state.config.symbols);
           if (json.state.config.perTradeRiskPct) setRiskPct(json.state.config.perTradeRiskPct);
           if (json.state.config.overallRiskPct) setOverallRiskPct(json.state.config.overallRiskPct);
@@ -192,18 +205,18 @@ export default function ForwardTestingPage() {
       updated = [...selectedSymbols, sym];
     }
     setSelectedSymbols(updated);
-    updateServerConfig(selectedStrategy, updated, riskPct, overallRiskPct);
+    updateServerConfig(selectedStrategy, updated, riskPct, overallRiskPct, selectedTimeframe);
   };
 
   const toggleSelectAll = () => {
     const all = AVAILABLE_INSTRUMENTS.map((x) => x.id);
     const updated = selectedSymbols.length === all.length ? ['BTCUSD'] : all;
     setSelectedSymbols(updated);
-    updateServerConfig(selectedStrategy, updated, riskPct, overallRiskPct);
+    updateServerConfig(selectedStrategy, updated, riskPct, overallRiskPct, selectedTimeframe);
   };
 
   // Push config update to server
-  const updateServerConfig = async (strat: string, syms: string[], rTrade: number, rOverall: number) => {
+  const updateServerConfig = async (strat: string, syms: string[], rTrade: number, rOverall: number, tf: string = selectedTimeframe) => {
     try {
       await fetch('/api/forward-test', {
         method: 'POST',
@@ -212,6 +225,7 @@ export default function ForwardTestingPage() {
           action: 'UPDATE_CONFIG',
           strategy: strat,
           symbols: syms,
+          timeframe: tf,
           perTradeRiskPct: rTrade,
           overallRiskPct: rOverall,
           leverage: effectiveLeverage,
@@ -254,6 +268,7 @@ export default function ForwardTestingPage() {
           action: 'RUN_1DAY_REPLAY',
           strategy: selectedStrategy,
           symbols: selectedSymbols,
+          timeframe: selectedTimeframe,
           startingCapital: capitalInput,
           perTradeRiskPct: riskPct,
           overallRiskPct: overallRiskPct,
@@ -590,6 +605,55 @@ export default function ForwardTestingPage() {
                 </button>
               ))}
             </div>
+
+            {/* Candle Timeframe Selector */}
+            <div className="pt-2 border-t border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  Candle Timeframe:
+                </label>
+                <span className="text-[10px] text-cyan-400 font-mono font-bold">
+                  {selectedTimeframe === '5m' ? '5m (Standard)' : selectedTimeframe}
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {AVAILABLE_TIMEFRAMES.map((tf) => {
+                  const isSel = selectedTimeframe === tf.id;
+                  return (
+                    <button
+                      key={tf.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTimeframe(tf.id);
+                        updateServerConfig(selectedStrategy, selectedSymbols, riskPct, overallRiskPct, tf.id);
+                      }}
+                      className={`py-1.5 rounded-lg text-center border transition-all ${
+                        isSel
+                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 font-bold shadow-sm'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-mono font-bold">{tf.label}</div>
+                      <div className={`text-[8px] truncate ${tf.isRecommended ? 'text-emerald-400 font-semibold' : 'text-slate-500'}`}>
+                        {tf.isRecommended ? 'Rec' : tf.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Universal Trailing SL Badge */}
+            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs">
+              <span className="text-[11px] text-emerald-300 font-medium flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                Universal Trailing SL:
+              </span>
+              <span className="text-[10px] font-mono font-bold text-emerald-400">
+                +35% SL @ 100% move
+              </span>
+            </div>
           </div>
 
           {/* STEP 2: Select Instrument (Multi-Select) */}
@@ -840,7 +904,16 @@ export default function ForwardTestingPage() {
                     <td className="py-3 px-3 font-medium text-slate-300">{pos.setupName}</td>
                     <td className="py-3 px-3 font-mono text-slate-300">${pos.entryPrice.toLocaleString()}</td>
                     <td className="py-3 px-3 font-mono text-slate-200 font-bold">${pos.currentPrice.toLocaleString()}</td>
-                    <td className="py-3 px-3 font-mono text-rose-400">${pos.stopLoss.toLocaleString()}</td>
+                    <td className="py-3 px-3 font-mono">
+                      <div className="text-rose-400 font-bold">${pos.stopLoss.toLocaleString()}</div>
+                      {pos.trailingMilestone && pos.trailingMilestone > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                          ⚡ +{pos.trailingMilestone * 35}% Trailed
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-slate-500">Fixed SL</span>
+                      )}
+                    </td>
                     <td className="py-3 px-3 font-mono text-emerald-400">${pos.takeProfit.toLocaleString()}</td>
                     <td className="py-3 px-3 font-mono font-bold">
                       <span className={pos.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
