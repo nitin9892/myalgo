@@ -49,8 +49,11 @@ export interface ForwardTestConfig {
   strategy: 'Strategy C' | 'Strategy B' | 'Strategy A';
   symbols: string[];
   perTradeRiskPct: number;
+  overallRiskPct: number;
   leverage: number;
+  autoLeverage?: boolean;
   lastCheckedAt?: string;
+  riskPausedReason?: string | null;
 }
 
 export interface ForwardTestState {
@@ -69,24 +72,40 @@ export function cleanUserId(userId?: string): string {
   return cleaned || 'DEFAULT_TRADER';
 }
 
+export function calculateAutoLeverage(strategy: string, riskPct: number): { leverage: number; avgSlPct: number; reason: string } {
+  let avgSlPct = 0.4; // 0.4% for Strategy B scalping
+  if (strategy === 'Strategy C') avgSlPct = 1.0; // 1.0% for daily breakout
+  if (strategy === 'Strategy A') avgSlPct = 1.2; // 1.2% for momentum
+
+  const raw = Math.ceil(riskPct / avgSlPct);
+  const leverage = Math.min(50, Math.max(1, raw));
+  return {
+    leverage,
+    avgSlPct,
+    reason: `${riskPct}% risk ÷ ~${avgSlPct}% avg SL = ${leverage}x`
+  };
+}
+
 function getStoreFilePath(cleanId: string): string {
   return path.join(DATA_DIR, `forward_test_${cleanId}.json`);
 }
 
 const DEFAULT_STATE: ForwardTestState = {
   wallet: {
-    startingBalance: 100000,
-    balance: 100000,
+    startingBalance: 10000,
+    balance: 10000,
     currency: 'INR',
     realizedPnl: 0,
     unrealizedPnl: 0,
   },
   config: {
     isRunning: true,
-    strategy: 'Strategy C',
+    strategy: 'Strategy B',
     symbols: ['BTCUSD', 'ETHUSD', 'SOLUSD', 'XRPUSD'],
     perTradeRiskPct: 2,
-    leverage: 10,
+    overallRiskPct: 10,
+    leverage: 5,
+    autoLeverage: true,
   },
   positions: [],
   closedTrades: [],
@@ -145,7 +164,7 @@ export function saveForwardTestState(state: ForwardTestState, userId?: string): 
   }
 }
 
-export function resetVirtualWallet(userId?: string, newStartingBalance: number = 100000): ForwardTestState {
+export function resetVirtualWallet(userId?: string, newStartingBalance: number = 10000): ForwardTestState {
   const cleanId = cleanUserId(userId);
   const current = loadForwardTestState(cleanId);
   const resetState: ForwardTestState = {

@@ -34,7 +34,9 @@ import {
   Sparkles,
   Sun,
   Moon,
-  LogOut
+  LogOut,
+  History,
+  PlayCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
@@ -685,6 +687,22 @@ export default function DashboardPage() {
             <p className="text-xs sm:text-sm text-slate-400 max-w-2xl">
               Fully autonomous multi-asset trading engine with institutional Smart Money Concepts (SMC), Liquidity Hunt detection, and automated risk allocation.
             </p>
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              <Link
+                href="/backtest"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all shadow-sm"
+              >
+                <History className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Real Market Backtesting</span>
+              </Link>
+              <Link
+                href="/forward-test"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all shadow-sm"
+              >
+                <PlayCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Forward Testing Simulator (₹10k Virtual)</span>
+              </Link>
+            </div>
           </div>
 
           {/* Header Action Badges & Switches */}

@@ -5,6 +5,7 @@ import { evaluatePrevDayBreakout, ActivePositionState, KeyLevels, BreakoutStrate
 import { 
   loadForwardTestState, 
   saveForwardTestState, 
+  calculateAutoLeverage,
   ForwardTestState, 
   ForwardPosition, 
   ForwardClosedTrade 
@@ -19,7 +20,22 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
     return state;
   }
 
+  // 1. Overall Account Risk & Capital Protection Check
+  const startingBal = state.wallet.startingBalance || 10000;
+  const overallRiskPct = state.config.overallRiskPct || 10;
+  const maxAllowableLoss = (startingBal * overallRiskPct) / 100;
+  const currentDrawdown = startingBal - state.wallet.balance;
+
+  if (currentDrawdown >= maxAllowableLoss) {
+    state.config.isRunning = false;
+    state.config.riskPausedReason = `Overall Risk Limit reached (${overallRiskPct}% / ₹${maxAllowableLoss.toLocaleString('en-IN')}). Engine paused for capital protection.`;
+    saveForwardTestState(state, userId);
+    return state;
+  }
+
   const { strategy, symbols, perTradeRiskPct } = state.config;
+  const autoLevInfo = calculateAutoLeverage(strategy, perTradeRiskPct);
+  state.config.leverage = autoLevInfo.leverage;
   let totalUnrealizedPnl = 0;
 
   for (const sym of symbols) {
@@ -41,8 +57,11 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
         existingPos.currentPrice = currentPrice;
         const isBuy = existingPos.side === 'BUY';
         const priceDiff = isBuy ? currentPrice - existingPos.entryPrice : existingPos.entryPrice - currentPrice;
-        const floatingPnl = Number((priceDiff * existingPos.quantity).toFixed(2));
-        const floatingPct = Number(((priceDiff / existingPos.entryPrice) * 100).toFixed(2));
+        const pricePctMove = priceDiff / existingPos.entryPrice;
+        const posNotional = existingPos.entryPrice * existingPos.quantity;
+        const floatingPnl = Number((posNotional * pricePctMove).toFixed(2));
+        const floatingPct = Number((pricePctMove * 100 * state.config.leverage).toFixed(2));
+        
         existingPos.unrealizedPnl = floatingPnl;
         existingPos.unrealizedPnlPct = floatingPct;
         totalUnrealizedPnl += floatingPnl;
@@ -79,14 +98,16 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
         if (!shouldClose && riskPoints > 0) {
           const favorablePoints = isBuy ? latestCandle.high - existingPos.entryPrice : existingPos.entryPrice - latestCandle.low;
           if (favorablePoints >= riskPoints * 1.5 && (!existingPos.trailingMilestone || existingPos.trailingMilestone < 1)) {
-            existingPos.stopLoss = isBuy ? existingPos.entryPrice + riskPoints * 0.05 : existingPos.entryPrice - riskPoints * 0.05;
+            existingPos.stopLoss = isBuy ? existingPos.entryPrice + riskPoints * 0.1 : existingPos.entryPrice - riskPoints * 0.1;
             existingPos.trailingMilestone = 1;
           }
         }
 
         if (shouldClose) {
-          const finalPnl = Number((isBuy ? (exitPrice - existingPos.entryPrice) * existingPos.quantity : (existingPos.entryPrice - exitPrice) * existingPos.quantity).toFixed(2));
-          const finalPct = Number(((finalPnl / (existingPos.entryPrice * existingPos.quantity)) * 100).toFixed(2));
+          const finalDiff = isBuy ? exitPrice - existingPos.entryPrice : existingPos.entryPrice - exitPrice;
+          const finalPctMove = finalDiff / existingPos.entryPrice;
+          const finalPnl = Number((posNotional * finalPctMove).toFixed(2));
+          const finalPct = Number((finalPctMove * 100 * state.config.leverage).toFixed(2));
 
           const closedTrade: ForwardClosedTrade = {
             id: `FT-${Date.now()}-${sym}`,
@@ -132,13 +153,11 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
           }
         } else {
           // Evaluate Strategy C (6 Core Setups Daily Breakout)
-          // Compute Previous Day Levels from candles
           const highs = candles.slice(0, -12).map((c) => c.high);
           const lows = candles.slice(0, -12).map((c) => c.low);
           const closes = candles.slice(0, -12).map((c) => c.close);
           const pdh = Math.max(...highs);
           const pdl = Math.min(...lows);
-          const pdc = closes[closes.length - 1];
 
           const isBullish = prevCandle.close > prevCandle.open;
           const isBearish = prevCandle.close < prevCandle.open;
@@ -169,9 +188,11 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
         // Open new simulated position if triggered
         if (triggerSide && stopLoss > 0 && takeProfit > 0) {
           const slDistance = Math.abs(currentPrice - stopLoss);
-          if (slDistance > 0) {
+          const slDistPct = slDistance / currentPrice;
+          if (slDistPct > 0) {
             const riskAmount = state.wallet.balance * (perTradeRiskPct / 100);
-            const quantity = Math.max(1, Math.min(50, Math.floor(riskAmount / slDistance)));
+            const targetNotional = riskAmount / slDistPct;
+            const quantity = Math.max(0.001, Number((targetNotional / currentPrice).toFixed(4)));
 
             const newPos: ForwardPosition = {
               id: `POS-${Date.now()}-${sym}`,
@@ -210,10 +231,12 @@ export async function runForwardTestCycle(userId?: string): Promise<ForwardTestS
 export async function runOneDayRealtimeReplay(
   strategyName: 'Strategy C' | 'Strategy B' | 'Strategy A',
   selectedSymbols: string[],
-  startingCapital: number = 100000,
+  startingCapital: number = 10000,
   riskPct: number = 2,
-  userId?: string
+  userId?: string,
+  overallRiskPct: number = 10
 ): Promise<ForwardTestState> {
+  const autoLev = calculateAutoLeverage(strategyName, riskPct);
   const state: ForwardTestState = {
     wallet: {
       startingBalance: startingCapital,
@@ -227,12 +250,16 @@ export async function runOneDayRealtimeReplay(
       strategy: strategyName,
       symbols: selectedSymbols,
       perTradeRiskPct: riskPct,
-      leverage: 10,
+      overallRiskPct,
+      leverage: autoLev.leverage,
+      autoLeverage: true,
     },
     positions: [],
     closedTrades: [],
     lastUpdated: new Date().toISOString(),
   };
+
+  const maxLoss = (startingCapital * overallRiskPct) / 100;
 
   // Run over past 24 hours (288 5-minute candles)
   for (const sym of selectedSymbols) {
@@ -246,6 +273,13 @@ export async function runOneDayRealtimeReplay(
       let activePos: ForwardPosition | null = null;
 
       for (let i = 20; i < dayCandles.length; i++) {
+        // Capital protection check
+        if (startingCapital - state.wallet.balance >= maxLoss) {
+          state.config.isRunning = false;
+          state.config.riskPausedReason = `Overall Risk Limit reached (${overallRiskPct}% / ₹${maxLoss.toLocaleString('en-IN')}). Replay halted.`;
+          break;
+        }
+
         const c = dayCandles[i];
         const prevC = dayCandles[i - 1];
 
@@ -278,8 +312,11 @@ export async function runOneDayRealtimeReplay(
           }
 
           if (shouldExit) {
-            const finalPnl = Number((isBuy ? (exitPrice - activePos.entryPrice) * activePos.quantity : (activePos.entryPrice - exitPrice) * activePos.quantity).toFixed(2));
-            const finalPct = Number(((finalPnl / (activePos.entryPrice * activePos.quantity)) * 100).toFixed(2));
+            const pDiff = isBuy ? exitPrice - activePos.entryPrice : activePos.entryPrice - exitPrice;
+            const pctMove = pDiff / activePos.entryPrice;
+            const posNotional = activePos.entryPrice * activePos.quantity;
+            const finalPnl = Number((posNotional * pctMove).toFixed(2));
+            const finalPct = Number((pctMove * 100 * state.config.leverage).toFixed(2));
 
             state.closedTrades.push({
               id: `FT-REP-${state.closedTrades.length + 1}-${sym}`,
@@ -314,9 +351,11 @@ export async function runOneDayRealtimeReplay(
 
           if (evalRes.canEnterNewTrade && evalRes.signal && evalRes.stopLoss && evalRes.target) {
             const slDistance = Math.abs(c.close - evalRes.stopLoss);
-            if (slDistance > 0) {
+            const slDistPct = slDistance / c.close;
+            if (slDistPct > 0) {
               const riskAmount = state.wallet.balance * (riskPct / 100);
-              const qty = Math.max(1, Math.min(50, Math.floor(riskAmount / slDistance)));
+              const targetNotional = riskAmount / slDistPct;
+              const qty = Math.max(0.001, Number((targetNotional / c.close).toFixed(4)));
 
               activePos = {
                 id: `POS-${c.timestamp}-${sym}`,
@@ -344,9 +383,11 @@ export async function runOneDayRealtimeReplay(
           if (prevC.close > pdh && c.close >= pdh) {
             const sl = prevC.low;
             const slDist = Math.abs(c.close - sl);
-            if (slDist > 0) {
+            const slDistPct = slDist / c.close;
+            if (slDistPct > 0) {
               const riskAmount = state.wallet.balance * (riskPct / 100);
-              const qty = Math.max(1, Math.min(50, Math.floor(riskAmount / slDist)));
+              const targetNotional = riskAmount / slDistPct;
+              const qty = Math.max(0.001, Number((targetNotional / c.close).toFixed(4)));
               activePos = {
                 id: `POS-${c.timestamp}-${sym}`,
                 symbol: sym,
@@ -367,9 +408,11 @@ export async function runOneDayRealtimeReplay(
           } else if (prevC.close < pdl && c.close <= pdl) {
             const sl = prevC.high;
             const slDist = Math.abs(sl - c.close);
-            if (slDist > 0) {
+            const slDistPct = slDist / c.close;
+            if (slDistPct > 0) {
               const riskAmount = state.wallet.balance * (riskPct / 100);
-              const qty = Math.max(1, Math.min(50, Math.floor(riskAmount / slDist)));
+              const targetNotional = riskAmount / slDistPct;
+              const qty = Math.max(0.001, Number((targetNotional / c.close).toFixed(4)));
               activePos = {
                 id: `POS-${c.timestamp}-${sym}`,
                 symbol: sym,
@@ -397,8 +440,10 @@ export async function runOneDayRealtimeReplay(
         activePos.currentPrice = lastCandle.close;
         const isBuy = activePos.side === 'BUY';
         const pDiff = isBuy ? lastCandle.close - activePos.entryPrice : activePos.entryPrice - lastCandle.close;
-        activePos.unrealizedPnl = Number((pDiff * activePos.quantity).toFixed(2));
-        activePos.unrealizedPnlPct = Number(((pDiff / activePos.entryPrice) * 100).toFixed(2));
+        const pctMove = pDiff / activePos.entryPrice;
+        const posNotional = activePos.entryPrice * activePos.quantity;
+        activePos.unrealizedPnl = Number((posNotional * pctMove).toFixed(2));
+        activePos.unrealizedPnlPct = Number((pctMove * 100 * state.config.leverage).toFixed(2));
         state.positions.push(activePos);
         state.wallet.unrealizedPnl += activePos.unrealizedPnl;
       }

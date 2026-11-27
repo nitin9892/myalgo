@@ -98,19 +98,21 @@ export async function POST(request: Request) {
       }
 
       case 'RUN_1DAY_REPLAY': {
-        const strategy = body.strategy || state.config.strategy || 'Strategy C';
+        const strategy = body.strategy || state.config.strategy || 'Strategy B';
         const symbols = body.symbols && Array.isArray(body.symbols) && body.symbols.length > 0
           ? body.symbols
           : state.config.symbols;
-        const capital = Math.max(1000, Number(body.startingCapital || state.wallet.startingBalance || 100000));
-        const riskPct = Math.min(10, Math.max(0.5, Number(body.perTradeRiskPct || state.config.perTradeRiskPct || 2)));
+        const capital = Math.max(100, Number(body.startingCapital || state.wallet.startingBalance || 10000));
+        const riskPct = Math.min(10, Math.max(0.25, Number(body.perTradeRiskPct || state.config.perTradeRiskPct || 2)));
+        const overallRiskPct = Math.min(50, Math.max(1, Number(body.overallRiskPct || state.config.overallRiskPct || 10)));
 
-        state = await runOneDayRealtimeReplay(strategy, symbols, capital, riskPct, userId);
+        state = await runOneDayRealtimeReplay(strategy, symbols, capital, riskPct, userId, overallRiskPct);
         break;
       }
 
       case 'START': {
         state.config.isRunning = true;
+        state.config.riskPausedReason = null;
         saveForwardTestState(state, userId);
         state = await runForwardTestCycle(userId);
         break;
@@ -128,13 +130,20 @@ export async function POST(request: Request) {
           state.config.symbols = body.symbols;
         }
         if (body.perTradeRiskPct) state.config.perTradeRiskPct = Number(body.perTradeRiskPct);
-        if (body.leverage) state.config.leverage = Number(body.leverage);
+        if (body.overallRiskPct) state.config.overallRiskPct = Number(body.overallRiskPct);
+        if (body.leverage) {
+          state.config.leverage = Number(body.leverage);
+          state.config.autoLeverage = false;
+        } else {
+          state.config.autoLeverage = true;
+        }
+        state.config.riskPausedReason = null;
         saveForwardTestState(state, userId);
         break;
       }
 
       case 'RESET_WALLET': {
-        const newBalance = Math.max(1000, Number(body.startingBalance || 100000));
+        const newBalance = Math.max(100, Number(body.startingBalance || 10000));
         state = resetVirtualWallet(userId, newBalance);
         break;
       }

@@ -15,6 +15,7 @@ import {
   X,
   AlertOctagon,
   PlayCircle,
+  History,
   Sun,
   Moon,
   LogOut
@@ -24,6 +25,7 @@ import { useTheme } from '@/context/ThemeContext';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Backtesting', href: '/backtest', icon: History },
   { name: 'Forward Testing', href: '/forward-test', icon: PlayCircle },
   { name: 'Brokers & APIs', href: '/brokers', icon: Wallet },
   { name: 'Logs & Audit', href: '/logs', icon: Terminal },
