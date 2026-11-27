@@ -673,14 +673,24 @@ export default function DashboardPage() {
 
         {/* Right: Quick Market Status Feeds & Mode Controls */}
         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
-            <span className="text-slate-400">CRYPTO:</span>
-            <span className="text-emerald-400 font-bold">LIVE 24/7</span>
-          </div>
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
-            <span className="text-slate-400">NSE:</span>
-            <span className="text-cyan-400 font-bold">DHAN v2</span>
-          </div>
+          {(!accessPermissions?.allowed_brokers || accessPermissions.allowed_brokers.includes('DELTA')) && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
+              <span className="text-slate-400">CRYPTO:</span>
+              <span className="text-emerald-400 font-bold">DELTA 24/7</span>
+            </div>
+          )}
+          {(!accessPermissions?.allowed_brokers || accessPermissions.allowed_brokers.includes('DHAN')) && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
+              <span className="text-slate-400">NSE:</span>
+              <span className="text-cyan-400 font-bold">DHAN v2</span>
+            </div>
+          )}
+          {(!accessPermissions?.allowed_brokers || accessPermissions.allowed_brokers.includes('MT5')) && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
+              <span className="text-slate-400">FOREX:</span>
+              <span className="text-purple-400 font-bold">MT5 READY</span>
+            </div>
+          )}
           <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono">
             <span className="text-slate-400">SYNC:</span>
             <span className="text-slate-300 font-bold">{lastUpdated || 'Live'}</span>
@@ -905,50 +915,55 @@ export default function DashboardPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { id: 'DELTA', name: 'Delta India', tag: 'Crypto F&O', icon: '⚡' },
-                { id: 'DHAN', name: 'DhanHQ', tag: 'NSE / Stocks', icon: '🏛️' },
-                { id: 'METATRADER', name: 'MetaTrader 5', tag: 'Forex / Gold', icon: '🌍' },
-              ].map((b) => {
-                const isSelected = selectedBroker === b.id;
-                const isAllowed = !accessPermissions?.allowed_brokers || accessPermissions.allowed_brokers.includes(b.id === 'METATRADER' ? 'MT5' : (b.id as any));
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    disabled={!isAllowed}
-                    onClick={() => {
-                      if (!isAllowed) return;
-                      setSelectedBroker(b.id as any);
-                      if (b.id === 'DHAN') {
-                        setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
-                      } else if (b.id === 'DELTA') {
-                        setSelectedSymbols(['BTC', 'ETH', 'SOL', 'XRP']);
-                      } else {
-                        setSelectedSymbols(['EURUSD', 'XAUUSD', 'US30']);
-                      }
-                    }}
-                    className={`p-3 rounded-xl text-center border transition-all ${
-                      !isAllowed
-                        ? 'opacity-40 bg-slate-950/60 border-slate-900 text-slate-600 cursor-not-allowed'
-                        : isSelected
-                        ? 'bg-cyan-500/15 border-cyan-500/60 text-cyan-300 font-bold shadow-lg shadow-cyan-500/10'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
-                    }`}
-                  >
-                    <div className="text-base mb-1">{b.icon}</div>
-                    <div className="text-xs font-bold truncate flex items-center justify-center gap-1">
-                      {b.name}
-                      {!isAllowed && <span className="text-[9px] text-amber-500" title="Not included in current license">🔒</span>}
-                    </div>
-                    <div className="text-[9px] text-slate-500 uppercase mt-0.5">
-                      {isAllowed ? b.tag : 'Plan Upgrade'}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            {(() => {
+              const allBrokers = [
+                { id: 'DELTA' as const, name: 'Delta India', tag: 'Crypto F&O', icon: '⚡' },
+                { id: 'DHAN' as const, name: 'DhanHQ', tag: 'NSE / Stocks', icon: '🏛️' },
+                { id: 'METATRADER' as const, name: 'MetaTrader 5', tag: 'Forex / Gold', icon: '🌍' },
+              ];
+              const allowedList = accessPermissions?.allowed_brokers?.map((b) => (b === 'MT5' ? 'METATRADER' : b));
+              const visibleBrokers = allowedList && allowedList.length > 0
+                ? allBrokers.filter((b) => allowedList.includes(b.id))
+                : allBrokers;
+              const gridCols = visibleBrokers.length === 1 ? 'grid-cols-1' : visibleBrokers.length === 2 ? 'grid-cols-2' : 'grid-cols-3';
+
+              return (
+                <div className={`grid ${gridCols} gap-2`}>
+                  {visibleBrokers.map((b) => {
+                    const isSelected = selectedBroker === b.id;
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedBroker(b.id as any);
+                          if (b.id === 'DHAN') {
+                            setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
+                          } else if (b.id === 'DELTA') {
+                            setSelectedSymbols(['BTC', 'ETH', 'SOL', 'XRP']);
+                          } else {
+                            setSelectedSymbols(['EURUSD', 'XAUUSD', 'US30']);
+                          }
+                        }}
+                        className={`p-3 rounded-xl text-center border transition-all ${
+                          isSelected
+                            ? 'bg-cyan-500/15 border-cyan-500/60 text-cyan-300 font-bold shadow-lg shadow-cyan-500/10'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
+                        }`}
+                      >
+                        <div className="text-base mb-1">{b.icon}</div>
+                        <div className="text-xs font-bold truncate">
+                          {b.name}
+                        </div>
+                        <div className="text-[9px] text-slate-500 uppercase mt-0.5">
+                          {b.tag}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Live Margin Indicator */}
             <div className="pt-3 border-t border-slate-900 flex items-center justify-between text-xs">
@@ -981,50 +996,62 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {[
+            {(() => {
+              const allStrategies = [
                 { 
-                  id: 'Strategy B', 
+                  id: 'Strategy B' as const, 
                   title: 'Phantom AI Scalper', 
                   tag: 'SMC + ICT Engine',
                   desc: 'BOS, Order Blocks & FVG confluences (1:4 RR)' 
                 },
                 { 
-                  id: 'Strategy C', 
+                  id: 'Strategy C' as const, 
                   title: '6-Setups Breakout', 
                   tag: 'PDH / PDL Breakouts',
                   desc: 'Previous Day High/Low sweeps & momentum (1:3 RR)' 
                 },
-              ].map((s) => {
-                const isSelected = selectedStrategy === s.id;
-                const isAllowed = !accessPermissions?.allowed_strategies || accessPermissions.allowed_strategies.includes(s.id as any);
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    disabled={!isAllowed}
-                    onClick={() => isAllowed && setSelectedStrategy(s.id as any)}
-                    className={`p-3 rounded-xl text-left border transition-all ${
-                      !isAllowed
-                        ? 'opacity-40 bg-slate-950/60 border-slate-900 text-slate-600 cursor-not-allowed'
-                        : isSelected
-                        ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold shadow-lg shadow-emerald-500/10'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs font-bold text-white truncate flex items-center gap-1">
-                        {s.title}
-                        {!isAllowed && <span className="text-[9px] text-amber-500">🔒</span>}
-                      </div>
-                      {isSelected && isAllowed && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                    </div>
-                    <div className="text-[10px] text-emerald-400 font-mono mt-0.5">{s.tag}</div>
-                    <div className="text-[9px] text-slate-400 mt-1 line-clamp-2">{isAllowed ? s.desc : 'Upgrade Access Code'}</div>
-                  </button>
-                );
-              })}
-            </div>
+                { 
+                  id: 'Strategy A' as const, 
+                  title: 'Trend Momentum Pro', 
+                  tag: 'VWAP & SuperTrend',
+                  desc: 'Multi-indicator trend rider & dynamic trailing (1:3 RR)' 
+                },
+              ];
+              const allowedStrats = accessPermissions?.allowed_strategies;
+              const visibleStrategies = allowedStrats && allowedStrats.length > 0
+                ? allStrategies.filter((s) => allowedStrats.includes(s.id))
+                : allStrategies.slice(0, 2);
+              const stratGridCols = visibleStrategies.length === 1 ? 'grid-cols-1' : visibleStrategies.length === 2 ? 'grid-cols-2' : 'grid-cols-3';
+
+              return (
+                <div className={`grid ${stratGridCols} gap-2`}>
+                  {visibleStrategies.map((s) => {
+                    const isSelected = selectedStrategy === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setSelectedStrategy(s.id as any)}
+                        className={`p-3 rounded-xl text-left border transition-all ${
+                          isSelected
+                            ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold shadow-lg shadow-emerald-500/10'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-bold text-white truncate">
+                            {s.title}
+                          </div>
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                        </div>
+                        <div className="text-[10px] text-emerald-400 font-mono mt-0.5">{s.tag}</div>
+                        <div className="text-[9px] text-slate-400 mt-1 line-clamp-2">{s.desc}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Symbols toggle */}
             <div className="pt-2 border-t border-slate-900 space-y-1.5">
@@ -1757,6 +1784,80 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* ⚖️ STATUTORY REGULATORY & RISK DISCLAIMER FOOTER */}
+      <footer className="mt-12 pt-8 pb-10 border-t border-slate-800/80 space-y-6">
+        <div className="p-5 sm:p-6 rounded-2xl bg-slate-950/90 border border-slate-800/90 space-y-5 shadow-2xl">
+          <div className="flex items-center justify-between flex-wrap gap-3 pb-4 border-b border-slate-850">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <ShieldAlert className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                  <span>Statutory Regulatory Notice & Financial Risk Disclosure</span>
+                  <span className="text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
+                    MANDATORY COMPLIANCE
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Please read this statutory disclosure carefully before deploying automated quantitative trading systems or connecting broker API credentials.
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono font-bold bg-slate-900 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-800">
+              SOFTWARE PLATFORM • ZERO CUSTODY
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] leading-relaxed text-slate-400">
+            {/* Box 1: Non-Advisory Software Tool */}
+            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+                <span>1. Non-Advisory & Non-SEBI Advisory Disclosure</span>
+              </div>
+              <p>
+                MyAlgo is strictly an institutional technological execution tool and algorithmic software bridge. It is <strong>NOT</strong> registered with SEBI (Securities and Exchange Board of India) or any global financial regulator as an Investment Advisor (IA), Research Analyst (RA), Portfolio Management Service (PMS), or Stock Broker. No feature, algorithm, quantitative signal, or metric within this system constitutes investment advice, stock tips, or solicitation to buy or sell securities, commodities, or derivatives.
+              </p>
+            </div>
+
+            {/* Box 2: Substantial Capital & Volatility Risk */}
+            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-rose-400 font-bold text-xs">
+                <span>2. High Financial Capital & Leverage Risk</span>
+              </div>
+              <p>
+                Trading in leveraged financial instruments (Crypto Perpetual Futures, NSE/BSE Equity Futures & Options, and Forex/CFDs) involves a high degree of risk and is not suitable for all investors. High leverage can amplify losses just as it can amplify gains. You may incur losses equal to or exceeding your total deposited capital. Past backtested performance and forward-simulated metrics are purely hypothetical and do not guarantee future profits.
+              </p>
+            </div>
+
+            {/* Box 3: Broker API Connectivity & Execution Disclaimers */}
+            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs">
+                <span>3. Third-Party Broker API & Execution Latency</span>
+              </div>
+              <p>
+                All orders are dispatched directly to your private, self-managed broker account (Delta Exchange, DhanHQ, or MetaTrader 5) via public API endpoints using your personal API keys. The platform operators have zero access or custody of your funds. We accept no responsibility for API outages, broker scheduled downtime, network latency, order slippage, rejected orders, exchange trading pauses, or forced liquidations.
+              </p>
+            </div>
+
+            {/* Box 4: User Sole Discretion & Complete Liability Waiver */}
+            <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
+                <span>4. User Discretion & Full Liability Waiver</span>
+              </div>
+              <p>
+                The user exercises 100% sole discretion and final authority over selecting strategies, symbols, timeframe candles, stop-loss rules, position sizes, and engaging the execution engine. By accessing this terminal or executing algorithmic cycles, the user expressly waives and holds harmless MyAlgo, its developers, and operators from any and all claims, financial losses, tax implications, or damages arising out of software usage.
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-850 flex flex-col sm:flex-row items-center justify-between gap-2 text-[10px] text-slate-500 font-mono">
+            <span>&copy; 2026 MyAlgo Quantitative Trading Engine. Strictly Private Client Deployment.</span>
+            <span>Risk-Defined Architecture &bull; 35% Dynamic Trailing SL Engine &bull; AES-256 Vault Scoped</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

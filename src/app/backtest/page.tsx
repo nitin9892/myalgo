@@ -79,10 +79,24 @@ export default function BacktestingPage() {
   const [trailingEnabled, setTrailingEnabled] = useState<boolean>(true);
   const [manualLeverage, setManualLeverage] = useState<boolean>(false);
   const [customLeverage, setCustomLeverage] = useState<number>(5);
+  const [allowedStrategies, setAllowedStrategies] = useState<string[] | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('myalgo_access_token') || 'DEFAULT_TRADER';
     setUserToken(saved.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_'));
+
+    try {
+      const savedPerms = localStorage.getItem('myalgo_access_permissions');
+      if (savedPerms) {
+        const parsed = JSON.parse(savedPerms);
+        if (parsed.allowed_strategies && Array.isArray(parsed.allowed_strategies) && parsed.allowed_strategies.length > 0) {
+          setAllowedStrategies(parsed.allowed_strategies);
+          if (!parsed.allowed_strategies.includes(strategy)) {
+            setStrategy(parsed.allowed_strategies[0] as any);
+          }
+        }
+      }
+    } catch {}
   }, []);
 
   // Compute Auto Leverage
@@ -226,7 +240,7 @@ export default function BacktestingPage() {
                   { id: 'Strategy B' as const, title: 'Strategy B: Phantom AI', desc: 'SMC + ICT Scalper (BOS • OB • FVG • 1:3.5 RR)' },
                   { id: 'Strategy C' as const, title: 'Strategy C: Daily Breakout', desc: '6 Core Institutional Setups (PDH • PDL • 1:3 RR)' },
                   { id: 'Strategy A' as const, title: 'Strategy A: Trend Momentum', desc: 'VWAP & SuperTrend Momentum Follower' },
-                ].map((s) => (
+                ].filter((s) => !allowedStrategies || allowedStrategies.includes(s.id)).map((s) => (
                   <button
                     key={s.id}
                     type="button"

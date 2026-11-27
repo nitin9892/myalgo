@@ -46,6 +46,20 @@ export default function BrokersPage() {
   const [showEditCredentials, setShowEditCredentials] = useState(false);
   const [showAllBrokers, setShowAllBrokers] = useState(false);
   const [selectedCryptoSymbol, setSelectedCryptoSymbol] = useState<'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'XRPUSD'>('BTCUSD');
+  const [allowedBrokers, setAllowedBrokers] = useState<string[] | null>(null);
+
+  // Load access permissions to enforce strict zero-leak broker visibility
+  useEffect(() => {
+    try {
+      const savedPerms = localStorage.getItem('myalgo_access_permissions');
+      if (savedPerms) {
+        const parsed = JSON.parse(savedPerms);
+        if (parsed.allowed_brokers && Array.isArray(parsed.allowed_brokers) && parsed.allowed_brokers.length > 0) {
+          setAllowedBrokers(parsed.allowed_brokers.map((b: string) => (b === 'MT5' ? 'METATRADER' : b)));
+        }
+      }
+    } catch {}
+  }, []);
 
   const getUserTokenClean = () => {
     if (typeof window === 'undefined') return 'DEFAULT_TRADER';
@@ -401,9 +415,14 @@ export default function BrokersPage() {
     }
   };
 
+  // Filter brokers strictly by user's Access Code license (Zero Leaks)
+  const accessibleBrokers = allowedBrokers && allowedBrokers.length > 0
+    ? brokers.filter((b) => allowedBrokers.includes(b.id))
+    : brokers;
+
   // Check if any broker is actively connected
-  const connectedBroker = brokers.find((b) => testStatus[b.id]?.success);
-  const displayedBrokers = (connectedBroker && !showAllBrokers) ? [connectedBroker] : brokers;
+  const connectedBroker = accessibleBrokers.find((b) => testStatus[b.id]?.success);
+  const displayedBrokers = (connectedBroker && !showAllBrokers) ? [connectedBroker] : accessibleBrokers;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -412,20 +431,22 @@ export default function BrokersPage() {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Wallet className="w-6 h-6 text-emerald-400" />
-            Broker Integration (Brokers A, B, C)
+            {accessibleBrokers.length === 1
+              ? `${accessibleBrokers[0].name.replace(/^Broker [A-C]:\s*/, '')} Integration`
+              : 'Broker Integration'}
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Connect your own private broker credentials. Credentials and balances are strictly isolated per account access code.
+            Connect your private broker credentials. Credentials and balances are strictly isolated per account access code.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {connectedBroker && (
+          {connectedBroker && accessibleBrokers.length > 1 && (
             <button
               onClick={() => setShowAllBrokers(!showAllBrokers)}
               className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all shadow-sm"
             >
-              {showAllBrokers ? 'Show Connected Only' : 'Switch / View All Brokers (A, B, C)'}
+              {showAllBrokers ? 'Show Connected Only' : `Switch / View All Licensed Brokers (${accessibleBrokers.length})`}
             </button>
           )}
 

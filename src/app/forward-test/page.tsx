@@ -124,6 +124,7 @@ export default function ForwardTestingPage() {
   const [manualLeverage, setManualLeverage] = useState<boolean>(false);
   const [customLeverage, setCustomLeverage] = useState<number>(5);
   const [userToken, setUserToken] = useState<string>('');
+  const [allowedStrategies, setAllowedStrategies] = useState<string[] | null>(null);
 
   const getAuthHeaders = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('myalgo_access_token') || 'DEFAULT_TRADER' : 'DEFAULT_TRADER';
@@ -136,6 +137,19 @@ export default function ForwardTestingPage() {
   useEffect(() => {
     const saved = localStorage.getItem('myalgo_access_token') || 'DEFAULT_TRADER';
     setUserToken(saved.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_'));
+
+    try {
+      const savedPerms = localStorage.getItem('myalgo_access_permissions');
+      if (savedPerms) {
+        const parsed = JSON.parse(savedPerms);
+        if (parsed.allowed_strategies && Array.isArray(parsed.allowed_strategies) && parsed.allowed_strategies.length > 0) {
+          setAllowedStrategies(parsed.allowed_strategies);
+          if (!parsed.allowed_strategies.includes(selectedStrategy)) {
+            setSelectedStrategy(parsed.allowed_strategies[0] as any);
+          }
+        }
+      }
+    } catch {}
   }, []);
 
   // Compute Auto Leverage
@@ -584,7 +598,7 @@ export default function ForwardTestingPage() {
                 { id: 'Strategy B' as const, label: 'Strategy B: Phantom AI', tag: '⚡ SMC + ICT Scalper (BOS • OB • FVG • 1:3.5 RR)' },
                 { id: 'Strategy C' as const, label: 'Strategy C: Daily Breakout', tag: '🔥 6 Core Setups (PDH • PDL • PDC • 1:3 RR)' },
                 { id: 'Strategy A' as const, label: 'Strategy A: Trend Momentum', tag: 'VWAP & SuperTrend Momentum Follower' },
-              ].map((st) => (
+              ].filter((st) => !allowedStrategies || allowedStrategies.includes(st.id)).map((st) => (
                 <button
                   key={st.id}
                   type="button"
