@@ -41,6 +41,7 @@ import {
 import Link from 'next/link';
 import { useModal } from '@/context/ModalContext';
 import { useTheme } from '@/context/ThemeContext';
+import { LiveChartViewer } from '@/components/LiveChartViewer';
 
 function formatDisplayBalance(brokerData: any): string {
   if (!brokerData) return 'Connected (Live)';
@@ -1352,6 +1353,9 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* 🟢 LIVE DELTA CHART & AUTOMATED SMC/ICT BOT VISION */}
+      <LiveChartViewer initialSymbol="BTCUSD" />
 
       {/* 🔴 ACTIVE LIVE POSITIONS (Real-time telemetry) */}
       <div className="p-5 sm:p-7 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl backdrop-blur-xl space-y-4">

@@ -16,6 +16,7 @@ import {
   AlertOctagon,
   PlayCircle,
   History,
+  BarChart2,
   Sun,
   Moon,
   LogOut
@@ -25,6 +26,7 @@ import { useTheme } from '@/context/ThemeContext';
 
 const navItems = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Live Chart', href: '/chart', icon: BarChart2 },
   { name: 'Backtesting', href: '/backtest', icon: History },
   { name: 'Forward Testing', href: '/forward-test', icon: PlayCircle },
   { name: 'Brokers & APIs', href: '/brokers', icon: Wallet },
