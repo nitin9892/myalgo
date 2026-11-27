@@ -15,6 +15,7 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
   const revokeAccessLocally = (reasonMsg?: string) => {
     try {
       localStorage.removeItem('myalgo_access_token');
+      localStorage.removeItem('myalgo_access_permissions');
       document.cookie = 'myalgo_access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT;';
     } catch {}
     setIsUnlocked(false);
@@ -33,6 +34,11 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
 
       const data = await res.json();
       if (res.ok && data.success) {
+        if (data.token) {
+          try {
+            localStorage.setItem('myalgo_access_permissions', JSON.stringify(data.token));
+          } catch {}
+        }
         setIsUnlocked(true);
       } else {
         revokeAccessLocally(
@@ -118,6 +124,11 @@ export function AccessGuard({ children }: { children: React.ReactNode }) {
       const data = await res.json();
       if (data.success) {
         localStorage.setItem('myalgo_access_token', accessCode.trim().toUpperCase());
+        if (data.token) {
+          try {
+            localStorage.setItem('myalgo_access_permissions', JSON.stringify(data.token));
+          } catch {}
+        }
         setIsUnlocked(true);
       } else {
         setError(data.message || 'Invalid or revoked access code');

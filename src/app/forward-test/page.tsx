@@ -94,6 +94,7 @@ const AVAILABLE_TIMEFRAMES = [
   { id: '1m', label: '1m', desc: '1-Min Scalp' },
   { id: '3m', label: '3m', desc: '3-Min Momentum' },
   { id: '5m', label: '5m', desc: '5-Min Standard', isRecommended: true },
+  { id: '10m', label: '10m', desc: '10-Min Pullback' },
   { id: '15m', label: '15m', desc: '15-Min Swing' },
   { id: '1h', label: '1h', desc: '1-Hour Macro' },
 ];
@@ -617,7 +618,7 @@ export default function ForwardTestingPage() {
                   {selectedTimeframe === '5m' ? '5m (Standard)' : selectedTimeframe}
                 </span>
               </div>
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-6 gap-1">
                 {AVAILABLE_TIMEFRAMES.map((tf) => {
                   const isSel = selectedTimeframe === tf.id;
                   return (
@@ -787,7 +788,7 @@ export default function ForwardTestingPage() {
                   ₹{((capitalInput * riskPct) / 100).toLocaleString('en-IN')} ({riskPct}%)
                 </span>
               </div>
-              <div className="grid grid-cols-5 gap-1">
+              <div className="grid grid-cols-6 gap-1">
                 {[0.5, 1, 2, 3, 5].map((p) => (
                   <button
                     key={p}

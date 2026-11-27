@@ -12,6 +12,10 @@ export interface AccessToken {
   expires_at: string | null;
   created_at: string;
   created_by?: string;
+  allowed_brokers?: ('DELTA' | 'DHAN' | 'MT5')[];
+  allowed_strategies?: ('Strategy B' | 'Strategy C' | 'Strategy A')[];
+  allowed_timeframes?: ('1m' | '3m' | '5m' | '10m' | '15m' | '1h')[];
+  commission_rate?: number;
 }
 
 export const MASTER_FALLBACK_TOKENS: AccessToken[] = [
@@ -25,6 +29,10 @@ export const MASTER_FALLBACK_TOKENS: AccessToken[] = [
     expires_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     created_by: 'SYSTEM',
+    allowed_brokers: ['DELTA', 'DHAN', 'MT5'],
+    allowed_strategies: ['Strategy B', 'Strategy C', 'Strategy A'],
+    allowed_timeframes: ['1m', '3m', '5m', '10m', '15m', '1h'],
+    commission_rate: 20,
   },
   {
     id: 'master-vip-2026',
@@ -36,6 +44,10 @@ export const MASTER_FALLBACK_TOKENS: AccessToken[] = [
     expires_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     created_by: 'SYSTEM',
+    allowed_brokers: ['DELTA', 'DHAN', 'MT5'],
+    allowed_strategies: ['Strategy B', 'Strategy C', 'Strategy A'],
+    allowed_timeframes: ['1m', '3m', '5m', '10m', '15m', '1h'],
+    commission_rate: 20,
   },
   {
     id: 'master-nitin-9892',
@@ -47,6 +59,10 @@ export const MASTER_FALLBACK_TOKENS: AccessToken[] = [
     expires_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     created_by: 'SYSTEM',
+    allowed_brokers: ['DELTA', 'DHAN', 'MT5'],
+    allowed_strategies: ['Strategy B', 'Strategy C', 'Strategy A'],
+    allowed_timeframes: ['1m', '3m', '5m', '10m', '15m', '1h'],
+    commission_rate: 20,
   },
 ];
 
@@ -129,6 +145,10 @@ export async function getAllAccessTokens(): Promise<AccessToken[]> {
             expires_at: row.expires_at || existing?.expires_at || null,
             created_at: row.created_at || existing?.created_at || new Date().toISOString(),
             created_by: row.created_by || existing?.created_by || 'ADMIN',
+            allowed_brokers: row.allowed_brokers || existing?.allowed_brokers || ['DELTA', 'DHAN', 'MT5'],
+            allowed_strategies: row.allowed_strategies || existing?.allowed_strategies || ['Strategy B', 'Strategy C', 'Strategy A'],
+            allowed_timeframes: row.allowed_timeframes || existing?.allowed_timeframes || ['1m', '3m', '5m', '10m', '15m', '1h'],
+            commission_rate: row.commission_rate ?? existing?.commission_rate ?? 20,
           });
         }
       }
@@ -161,6 +181,10 @@ export async function getAllAccessTokens(): Promise<AccessToken[]> {
             expires_at: m.expires_at || existing?.expires_at || null,
             created_at: m.created_at || existing?.created_at || row.timestamp,
             created_by: m.created_by || existing?.created_by || 'ADMIN',
+            allowed_brokers: m.allowed_brokers || existing?.allowed_brokers || ['DELTA', 'DHAN', 'MT5'],
+            allowed_strategies: m.allowed_strategies || existing?.allowed_strategies || ['Strategy B', 'Strategy C', 'Strategy A'],
+            allowed_timeframes: m.allowed_timeframes || existing?.allowed_timeframes || ['1m', '3m', '5m', '10m', '15m', '1h'],
+            commission_rate: m.commission_rate ?? existing?.commission_rate ?? 20,
           });
         }
       }
@@ -195,7 +219,10 @@ export async function createAccessToken(
   label: string = 'Trader Access',
   max_uses: number = 10,
   expires_in_days?: number,
-  created_by?: string
+  created_by?: string,
+  allowed_brokers: ('DELTA' | 'DHAN' | 'MT5')[] = ['DELTA', 'DHAN', 'MT5'],
+  allowed_strategies: ('Strategy B' | 'Strategy C' | 'Strategy A')[] = ['Strategy B', 'Strategy C', 'Strategy A'],
+  commission_rate: number = 20
 ): Promise<{ success: boolean; token?: AccessToken; error?: string }> {
   const cleanCode = code.trim().toUpperCase();
   if (!cleanCode) {
@@ -216,6 +243,10 @@ export async function createAccessToken(
     expires_at: expiresAt,
     created_at: new Date().toISOString(),
     created_by: created_by || 'ADMIN',
+    allowed_brokers: allowed_brokers && allowed_brokers.length > 0 ? allowed_brokers : ['DELTA', 'DHAN', 'MT5'],
+    allowed_strategies: allowed_strategies && allowed_strategies.length > 0 ? allowed_strategies : ['Strategy B', 'Strategy C', 'Strategy A'],
+    allowed_timeframes: ['1m', '3m', '5m', '10m', '15m', '1h'],
+    commission_rate: Number(commission_rate) || 20,
   };
 
   // 1. Immediately persist locally

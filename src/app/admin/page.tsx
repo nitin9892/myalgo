@@ -42,6 +42,10 @@ interface TokenItem {
   used_count: number;
   expires_at: string | null;
   created_at: string;
+  allowed_brokers?: ('DELTA' | 'DHAN' | 'MT5')[];
+  allowed_strategies?: ('Strategy B' | 'Strategy C' | 'Strategy A')[];
+  allowed_timeframes?: ('1m' | '3m' | '5m' | '10m' | '15m' | '1h')[];
+  commission_rate?: number;
 }
 
 interface CommissionRecord {
@@ -118,11 +122,18 @@ export default function AdminPage() {
   const [backtestResult, setBacktestResult] = useState<any | null>(null);
   const [backtestError, setBacktestError] = useState<string | null>(null);
 
-  // New Token Form State
+  // New Token Form State with Granular Permissions
   const [newTokenCode, setNewTokenCode] = useState('');
   const [newTokenLabel, setNewTokenLabel] = useState('');
   const [maxUses, setMaxUses] = useState(10);
   const [expiryDays, setExpiryDays] = useState(30);
+  const [allowedBrokers, setAllowedBrokers] = useState<('DELTA' | 'DHAN' | 'MT5')[]>(['DELTA', 'DHAN', 'MT5']);
+  const [allowedStrategies, setAllowedStrategies] = useState<('Strategy B' | 'Strategy C' | 'Strategy A')[]>([
+    'Strategy B',
+    'Strategy C',
+    'Strategy A',
+  ]);
+  const [tokenCommissionRate, setTokenCommissionRate] = useState<number>(20);
   const [creatingToken, setCreatingToken] = useState(false);
 
   useEffect(() => {
@@ -218,6 +229,9 @@ export default function AdminPage() {
           max_uses: maxUses,
           expires_in_days: expiryDays,
           adminEmail: emailToUse,
+          allowed_brokers: allowedBrokers,
+          allowed_strategies: allowedStrategies,
+          commission_rate: tokenCommissionRate,
         }),
       });
       const data = await res.json();
@@ -642,68 +656,157 @@ export default function AdminPage() {
               <Plus className="w-5 h-5 text-emerald-400" /> Generate New Access Code
             </h2>
 
-            <form onSubmit={handleCreateToken} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-slate-300">Access Code</label>
-                  <button
-                    type="button"
-                    onClick={generateRandomCode}
-                    className="text-[11px] text-cyan-400 hover:underline"
-                  >
-                    Auto-Generate
-                  </button>
+            <form onSubmit={handleCreateToken} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-300">Access Code</label>
+                    <button
+                      type="button"
+                      onClick={generateRandomCode}
+                      className="text-[11px] text-cyan-400 hover:underline"
+                    >
+                      Auto-Generate
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={newTokenCode}
+                    onChange={(e) => setNewTokenCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. ALGO-TRADER-99"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none uppercase"
+                    required
+                  />
                 </div>
-                <input
-                  type="text"
-                  value={newTokenCode}
-                  onChange={(e) => setNewTokenCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. ALGO-TRADER-99"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none uppercase"
-                  required
-                />
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-300">Trader Label / Name</label>
-                <input
-                  type="text"
-                  value={newTokenLabel}
-                  onChange={(e) => setNewTokenLabel(e.target.value)}
-                  placeholder="e.g. VIP Client 1"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-500 focus:outline-none"
-                />
-              </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300">Trader Label / Client Name</label>
+                  <input
+                    type="text"
+                    value={newTokenLabel}
+                    onChange={(e) => setNewTokenLabel(e.target.value)}
+                    placeholder="e.g. Kapil - Pro Trader"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-300">Max Device Uses</label>
-                <input
-                  type="number"
-                  value={maxUses}
-                  onChange={(e) => setMaxUses(Number(e.target.value))}
-                  min="1"
-                  max="9999"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-300">Valid For (Days)</label>
-                <div className="flex items-center gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300">Max Device Uses</label>
                   <input
                     type="number"
-                    value={expiryDays}
-                    onChange={(e) => setExpiryDays(Number(e.target.value))}
+                    value={maxUses}
+                    onChange={(e) => setMaxUses(Number(e.target.value))}
                     min="1"
-                    max="365"
+                    max="9999"
                     className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 focus:outline-none"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300">Valid For (Rental Period)</label>
+                  <select
+                    value={expiryDays}
+                    onChange={(e) => setExpiryDays(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:border-cyan-500 focus:outline-none font-semibold"
+                  >
+                    <option value={7}>7 Days (Trial)</option>
+                    <option value={30}>30 Days (Monthly Rent)</option>
+                    <option value={90}>90 Days (Quarterly Plan)</option>
+                    <option value={180}>180 Days (Half-Yearly)</option>
+                    <option value={365}>365 Days (Annual)</option>
+                    <option value={9999}>Lifetime License</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Granular License Permissions & Commission */}
+              <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Allowed Brokers */}
+                <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-[11px] font-bold text-slate-300 block">Allowed Brokers (Client License)</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { id: 'DELTA' as const, label: 'Delta (Crypto)', color: 'text-cyan-400 border-cyan-500/40 bg-cyan-500/10' },
+                      { id: 'DHAN' as const, label: 'Dhan (NSE F&O)', color: 'text-amber-400 border-amber-500/40 bg-amber-500/10' },
+                      { id: 'MT5' as const, label: 'MT5 (Forex)', color: 'text-purple-400 border-purple-500/40 bg-purple-500/10' },
+                    ].map((b) => {
+                      const isSel = allowedBrokers.includes(b.id);
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            if (isSel) {
+                              if (allowedBrokers.length > 1) setAllowedBrokers(allowedBrokers.filter(x => x !== b.id));
+                            } else {
+                              setAllowedBrokers([...allowedBrokers, b.id]);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                            isSel ? b.color : 'text-slate-500 border-slate-800 bg-slate-900'
+                          }`}
+                        >
+                          {isSel ? '✓ ' : '+ '}{b.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Allowed Strategies */}
+                <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <span className="text-[11px] font-bold text-slate-300 block">Allowed Strategies</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { id: 'Strategy B' as const, label: 'Strategy B (Phantom AI)' },
+                      { id: 'Strategy C' as const, label: 'Strategy C (Breakout)' },
+                      { id: 'Strategy A' as const, label: 'Strategy A (Momentum)' },
+                    ].map((st) => {
+                      const isSel = allowedStrategies.includes(st.id);
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => {
+                            if (isSel) {
+                              if (allowedStrategies.length > 1) setAllowedStrategies(allowedStrategies.filter(x => x !== st.id));
+                            } else {
+                              setAllowedStrategies([...allowedStrategies, st.id]);
+                            }
+                          }}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                            isSel ? 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10' : 'text-slate-500 border-slate-800 bg-slate-900'
+                          }`}
+                        >
+                          {isSel ? '✓ ' : '+ '}{st.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Commission Rate & Create Button */}
+                <div className="space-y-1.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-300 block mb-1">Profit Share Comm %</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={tokenCommissionRate}
+                        onChange={(e) => setTokenCommissionRate(Number(e.target.value))}
+                        className="w-16 px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono font-bold text-xs focus:border-cyan-500"
+                      />
+                      <span className="text-xs text-slate-400 font-bold">%</span>
+                    </div>
+                  </div>
                   <button
                     type="submit"
                     disabled={creatingToken}
-                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs transition-colors shrink-0 disabled:opacity-50"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50 shrink-0"
                   >
-                    {creatingToken ? 'Creating...' : 'Create'}
+                    {creatingToken ? 'Generating...' : '⚡ Generate License'}
                   </button>
                 </div>
               </div>
@@ -714,7 +817,7 @@ export default function AdminPage() {
           <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-xl">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Key className="w-5 h-5 text-emerald-400" /> Active Access Tokens ({tokens.length})
+                <Key className="w-5 h-5 text-emerald-400" /> Active Access Tokens & Licenses ({tokens.length})
               </h2>
               <button
                 onClick={() => fetchTokens()}
@@ -729,7 +832,10 @@ export default function AdminPage() {
                 <thead className="text-xs uppercase bg-slate-950/60 text-slate-400 border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-4">Code</th>
-                    <th className="py-3 px-4">Label</th>
+                    <th className="py-3 px-4">Client Label</th>
+                    <th className="py-3 px-4">Brokers</th>
+                    <th className="py-3 px-4">Strategies</th>
+                    <th className="py-3 px-4">Comm %</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Uses</th>
                     <th className="py-3 px-4">Expires</th>
@@ -749,7 +855,35 @@ export default function AdminPage() {
                           {copiedId === t.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </td>
-                      <td className="py-3.5 px-4 font-sans text-slate-300">{t.label}</td>
+                      <td className="py-3.5 px-4 font-sans text-slate-300 font-medium">{t.label}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {(t.allowed_brokers || ['DELTA', 'DHAN', 'MT5']).map((b) => (
+                            <span
+                              key={b}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                                b === 'DELTA'
+                                  ? 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10'
+                                  : b === 'DHAN'
+                                  ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+                                  : 'text-purple-300 border-purple-500/30 bg-purple-500/10'
+                              }`}
+                            >
+                              {b}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {(t.allowed_strategies || ['Strategy B', 'Strategy C', 'Strategy A']).map((st) => (
+                            <span key={st} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+                              {st === 'Strategy B' ? 'Strat B' : st === 'Strategy C' ? 'Strat C' : 'Strat A'}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-emerald-400 font-bold">{t.commission_rate ?? 20}%</td>
                       <td className="py-3.5 px-4">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           t.is_active

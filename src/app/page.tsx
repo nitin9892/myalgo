@@ -117,7 +117,7 @@ export default function DashboardPage() {
   // 4-Step Launch & Workflow Wizard State
   const [selectedBroker, setSelectedBroker] = useState<'DELTA' | 'DHAN' | 'METATRADER'>('DELTA');
   const [selectedStrategy, setSelectedStrategy] = useState<'Strategy B' | 'Strategy C' | 'Strategy A'>('Strategy B');
-  const [selectedTimeframe, setSelectedTimeframe] = useState<'1m' | '3m' | '5m' | '15m' | '1h'>('5m');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<'1m' | '3m' | '5m' | '10m' | '15m' | '1h'>('5m');
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(['BTC', 'ETH', 'SOL', 'XRP']);
   const [allocatedCapital, setAllocatedCapital] = useState<number>(100000);
   const [riskPerTrade, setRiskPerTrade] = useState<number>(2);
@@ -126,6 +126,22 @@ export default function DashboardPage() {
   const [maxDrawdownPct, setMaxDrawdownPct] = useState<number>(5);
   const [isLaunchingAlgo, setIsLaunchingAlgo] = useState(false);
   const [showQuickConnectBroker, setShowQuickConnectBroker] = useState(false);
+  const [accessPermissions, setAccessPermissions] = useState<{
+    allowed_brokers?: string[];
+    allowed_strategies?: string[];
+    allowed_timeframes?: string[];
+    commission_rate?: number;
+    label?: string;
+  } | null>(null);
+
+  // Compute Smart Auto Leverage based on strategy average SL and riskPerTrade
+  const getSmartAutoLeverage = () => {
+    let avgSlPct = 0.4; // 0.4% for Strategy B scalping
+    if (selectedStrategy === 'Strategy C') avgSlPct = 1.0;
+    if (selectedStrategy === 'Strategy A') avgSlPct = 1.2;
+    const raw = Math.ceil(riskPerTrade / avgSlPct);
+    return Math.min(25, Math.max(1, raw));
+  };
 
   // Quick credentials input for modal
   const [quickCreds, setQuickCreds] = useState<Record<string, string>>({
@@ -144,6 +160,40 @@ export default function DashboardPage() {
     updateTime();
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Load Granular License Permissions (Decided by Access Code)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('myalgo_access_permissions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setAccessPermissions(parsed);
+
+        // If active broker is not permitted in user's license, auto-switch to first allowed broker
+        if (parsed.allowed_brokers && parsed.allowed_brokers.length > 0) {
+          const mapped = parsed.allowed_brokers.map((b: string) => (b === 'MT5' ? 'METATRADER' : b));
+          if (!mapped.includes(selectedBroker)) {
+            const firstAllowed = mapped[0] as 'DELTA' | 'DHAN' | 'METATRADER';
+            setSelectedBroker(firstAllowed);
+            if (firstAllowed === 'DHAN') {
+              setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
+            } else if (firstAllowed === 'DELTA') {
+              setSelectedSymbols(['BTC', 'ETH', 'SOL', 'XRP']);
+            } else {
+              setSelectedSymbols(['EURUSD', 'XAUUSD', 'US30']);
+            }
+          }
+        }
+
+        // If active strategy is not permitted, auto-switch to first allowed strategy
+        if (parsed.allowed_strategies && parsed.allowed_strategies.length > 0) {
+          if (!parsed.allowed_strategies.includes(selectedStrategy)) {
+            setSelectedStrategy(parsed.allowed_strategies[0] as any);
+          }
+        }
+      }
+    } catch {}
   }, []);
 
   const getUserTokenClean = () => {
@@ -540,7 +590,9 @@ export default function DashboardPage() {
       const token = getUserTokenClean();
       const credsToSend = selectedBroker === 'DHAN'
         ? { clientId: quickCreds.clientId, accessToken: quickCreds.accessToken }
-        : { apiKey: quickCreds.apiKey, apiSecret: quickCreds.apiSecret, region: 'INDIA' };
+        : selectedBroker === 'DELTA'
+        ? { apiKey: quickCreds.apiKey, apiSecret: quickCreds.apiSecret, region: 'INDIA' }
+        : { bridgeSecret: quickCreds.bridgeSecret || 'mt5_bridge_secret_key_2026' };
 
       const res = await fetch('/api/brokers/sync', {
         method: 'POST',
@@ -798,6 +850,20 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-400 mt-1">
               Select Broker &rarr; Choose Institutional Strategy &rarr; Set Risk Rules &rarr; Click Launch to execute autonomous cycles.
             </p>
+            {accessPermissions && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px]">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span className="text-slate-400">License:</span>
+                  <strong className="text-white font-mono">{accessPermissions.label || 'Active Client'}</strong>
+                  {accessPermissions.allowed_brokers && (
+                    <span className="text-emerald-300 font-mono text-[10px] ml-1">
+                      [{accessPermissions.allowed_brokers.join(' • ')}]
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -846,11 +912,14 @@ export default function DashboardPage() {
                 { id: 'METATRADER', name: 'MetaTrader 5', tag: 'Forex / Gold', icon: '🌍' },
               ].map((b) => {
                 const isSelected = selectedBroker === b.id;
+                const isAllowed = !accessPermissions?.allowed_brokers || accessPermissions.allowed_brokers.includes(b.id === 'METATRADER' ? 'MT5' : (b.id as any));
                 return (
                   <button
                     key={b.id}
                     type="button"
+                    disabled={!isAllowed}
                     onClick={() => {
+                      if (!isAllowed) return;
                       setSelectedBroker(b.id as any);
                       if (b.id === 'DHAN') {
                         setSelectedSymbols(['NIFTY', 'BANKNIFTY', 'RELIANCE', 'TATAMOTORS']);
@@ -861,14 +930,21 @@ export default function DashboardPage() {
                       }
                     }}
                     className={`p-3 rounded-xl text-center border transition-all ${
-                      isSelected
+                      !isAllowed
+                        ? 'opacity-40 bg-slate-950/60 border-slate-900 text-slate-600 cursor-not-allowed'
+                        : isSelected
                         ? 'bg-cyan-500/15 border-cyan-500/60 text-cyan-300 font-bold shadow-lg shadow-cyan-500/10'
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
                     }`}
                   >
                     <div className="text-base mb-1">{b.icon}</div>
-                    <div className="text-xs font-bold truncate">{b.name}</div>
-                    <div className="text-[9px] text-slate-500 uppercase mt-0.5">{b.tag}</div>
+                    <div className="text-xs font-bold truncate flex items-center justify-center gap-1">
+                      {b.name}
+                      {!isAllowed && <span className="text-[9px] text-amber-500" title="Not included in current license">🔒</span>}
+                    </div>
+                    <div className="text-[9px] text-slate-500 uppercase mt-0.5">
+                      {isAllowed ? b.tag : 'Plan Upgrade'}
+                    </div>
                   </button>
                 );
               })}
@@ -921,20 +997,30 @@ export default function DashboardPage() {
                 },
               ].map((s) => {
                 const isSelected = selectedStrategy === s.id;
+                const isAllowed = !accessPermissions?.allowed_strategies || accessPermissions.allowed_strategies.includes(s.id as any);
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => setSelectedStrategy(s.id as any)}
+                    disabled={!isAllowed}
+                    onClick={() => isAllowed && setSelectedStrategy(s.id as any)}
                     className={`p-3 rounded-xl text-left border transition-all ${
-                      isSelected
+                      !isAllowed
+                        ? 'opacity-40 bg-slate-950/60 border-slate-900 text-slate-600 cursor-not-allowed'
+                        : isSelected
                         ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold shadow-lg shadow-emerald-500/10'
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-850'
                     }`}
                   >
-                    <div className="text-xs font-bold text-white truncate">{s.title}</div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-white truncate flex items-center gap-1">
+                        {s.title}
+                        {!isAllowed && <span className="text-[9px] text-amber-500">🔒</span>}
+                      </div>
+                      {isSelected && isAllowed && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                    </div>
                     <div className="text-[10px] text-emerald-400 font-mono mt-0.5">{s.tag}</div>
-                    <div className="text-[9px] text-slate-400 mt-1 line-clamp-2">{s.desc}</div>
+                    <div className="text-[9px] text-slate-400 mt-1 line-clamp-2">{isAllowed ? s.desc : 'Upgrade Access Code'}</div>
                   </button>
                 );
               })}
@@ -983,13 +1069,14 @@ export default function DashboardPage() {
                   {selectedTimeframe === '5m' ? '5m (Standard SMC)' : selectedTimeframe}
                 </span>
               </div>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="grid grid-cols-6 gap-1">
                 {[
-                  { id: '1m', label: '1m', desc: 'Ultra Scalp' },
-                  { id: '3m', label: '3m', desc: 'Micro Trend' },
+                  { id: '1m', label: '1m', desc: 'Scalp' },
+                  { id: '3m', label: '3m', desc: 'Fast' },
                   { id: '5m', label: '5m', desc: 'Recommended', isRecommended: true },
+                  { id: '10m', label: '10m', desc: 'Pullback' },
                   { id: '15m', label: '15m', desc: 'Structure' },
-                  { id: '1h', label: '1h', desc: 'HTF Trend' },
+                  { id: '1h', label: '1h', desc: 'Macro' },
                 ].map((tf) => {
                   const isSel = selectedTimeframe === tf.id;
                   return (
@@ -1054,16 +1141,27 @@ export default function DashboardPage() {
               </div>
 
               <div>
-                <label className="text-[10px] text-slate-400 block mb-1 font-semibold">Leverage</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] text-slate-400 font-semibold">Leverage</label>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeverage(getSmartAutoLeverage())}
+                    className="text-[9px] text-amber-400 font-mono hover:underline"
+                    title="Smart Safe leverage calculated from SL distance"
+                  >
+                    Auto ({getSmartAutoLeverage()}x)
+                  </button>
+                </div>
                 <select
                   value={selectedLeverage}
                   onChange={(e) => setSelectedLeverage(Number(e.target.value))}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-white font-mono text-xs font-bold outline-none focus:border-emerald-500"
                 >
+                  <option value={getSmartAutoLeverage()}>⚡ Smart Auto ({getSmartAutoLeverage()}x)</option>
                   <option value={1}>1x Spot</option>
-                  <option value={5}>5x</option>
-                  <option value={10}>10x</option>
-                  <option value={20}>20x</option>
+                  <option value={5}>5x Safe</option>
+                  <option value={10}>10x Standard</option>
+                  <option value={20}>20x Max</option>
                 </select>
               </div>
             </div>
@@ -1221,12 +1319,17 @@ export default function DashboardPage() {
                 </>
               ) : (
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300">MT5 Bridge Secret</label>
+                  <label className="text-xs font-semibold text-slate-300">MT5 Bridge Secret / Token</label>
                   <input
                     type="password"
-                    defaultValue="mt5_bridge_secret_key_2026"
+                    value={quickCreds.bridgeSecret || ''}
+                    onChange={(e) => setQuickCreds({ ...quickCreds, bridgeSecret: e.target.value })}
+                    placeholder="mt5_bridge_secret_key_2026"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-cyan-500 outline-none"
                   />
+                  <p className="text-[10px] text-slate-500">
+                    Connects directly to your MT5 bridge runner or MetaApi cloud terminal.
+                  </p>
                 </div>
               )}
             </div>

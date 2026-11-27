@@ -33,6 +33,11 @@ export async function POST(request: Request) {
         token: {
           code: verification.token?.code || cleanCode,
           label: verification.token?.label || 'Trader Access',
+          allowed_brokers: verification.token?.allowed_brokers || ['DELTA', 'DHAN', 'MT5'],
+          allowed_strategies: verification.token?.allowed_strategies || ['Strategy B', 'Strategy C', 'Strategy A'],
+          allowed_timeframes: verification.token?.allowed_timeframes || ['1m', '3m', '5m', '10m', '15m', '1h'],
+          commission_rate: verification.token?.commission_rate ?? 20,
+          expires_at: verification.token?.expires_at || null,
         },
       }, {
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
@@ -56,7 +61,12 @@ export async function POST(request: Request) {
       message: verification.message,
       token: { 
         code: verification.token?.code || cleanCode, 
-        label: verification.token?.label || 'Trader Access' 
+        label: verification.token?.label || 'Trader Access',
+        allowed_brokers: verification.token?.allowed_brokers || ['DELTA', 'DHAN', 'MT5'],
+        allowed_strategies: verification.token?.allowed_strategies || ['Strategy B', 'Strategy C', 'Strategy A'],
+        allowed_timeframes: verification.token?.allowed_timeframes || ['1m', '3m', '5m', '10m', '15m', '1h'],
+        commission_rate: verification.token?.commission_rate ?? 20,
+        expires_at: verification.token?.expires_at || null,
       },
     });
 

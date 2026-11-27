@@ -54,7 +54,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 401 });
     }
 
-    const { code, label, max_uses = 10, expires_in_days } = body;
+    const { 
+      code, 
+      label, 
+      max_uses = 10, 
+      expires_in_days,
+      allowed_brokers,
+      allowed_strategies,
+      commission_rate
+    } = body;
     if (!code) {
       return NextResponse.json({ error: 'Token code is required' }, { status: 400 });
     }
@@ -64,7 +72,10 @@ export async function POST(request: Request) {
       label || 'Trader Access',
       Number(max_uses) || 10,
       expires_in_days ? Number(expires_in_days) : undefined,
-      auth.email || 'ADMIN'
+      auth.email || 'ADMIN',
+      allowed_brokers,
+      allowed_strategies,
+      commission_rate !== undefined ? Number(commission_rate) : 20
     );
 
     if (!result.success) {
